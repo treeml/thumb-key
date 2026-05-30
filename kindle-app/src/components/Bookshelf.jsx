@@ -54,12 +54,12 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, search
   const [loading, setLoading] = useState({})
 
   useEffect(() => {
-    // Load Popular immediately, then stagger the rest to avoid hammering the API
+    const timers = []
     CATEGORIES.forEach((cat, i) => {
       if (sectionCache[cat.key]) return  // already cached, skip fetch
 
-      const delay = i * 300  // 0ms, 300ms, 600ms … staggered
-      const timer = setTimeout(() => {
+      const delay = i * 350
+      const t = setTimeout(() => {
         setLoading(p => ({ ...p, [cat.key]: true }))
         const fetcher = cat.query ? fetchBooksBySubject(cat.query) : searchBooks(null, 1)
         fetcher
@@ -74,9 +74,9 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, search
           })
           .finally(() => setLoading(p => ({ ...p, [cat.key]: false })))
       }, delay)
-
-      return () => clearTimeout(timer)
+      timers.push(t)
     })
+    return () => timers.forEach(clearTimeout)
   }, [])
 
   const [searchResults, setSearchResults] = useState(null)
