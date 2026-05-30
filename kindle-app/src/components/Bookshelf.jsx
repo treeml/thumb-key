@@ -37,10 +37,8 @@ function ShelfRow({ title, books, onSelect, getProgress, loading, error, onRetry
           ? Array.from({ length: 6 }).map((_, i) => <div key={i} className="book-card-skeleton" />)
           : error
           ? (
-            <div className="shelf-error">
-              <div>
-                <div style={{fontSize:11,color:'#e07b39',marginBottom:4}}>Error: {error}</div>
-              </div>
+            <div className="shelf-error" style={{flexDirection:'column',alignItems:'flex-start',gap:8}}>
+              <div style={{fontSize:13,color:'#e07b39',maxWidth:300,wordBreak:'break-all'}}>{error}</div>
               <button className="retry-btn" onClick={onRetry}>Retry</button>
             </div>
           )
@@ -81,7 +79,9 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, search
         setErrors(p => ({ ...p, [cat.key]: false }))
       })
       .catch((e) => {
-        setErrors(p => ({ ...p, [cat.key]: (e && e.message) ? e.message : String(e) }))
+        let msg = 'unknown'
+        try { msg = e?.message || JSON.stringify(e) || String(e) } catch { msg = String(e) }
+        setErrors(p => ({ ...p, [cat.key]: msg }))
       })
       .finally(() => setLoading(p => ({ ...p, [cat.key]: false })))
   }, [])
