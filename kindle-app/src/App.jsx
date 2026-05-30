@@ -39,7 +39,7 @@ export default function App() {
       setSelectedBook(newBook)
       setView('detail')
     } else {
-      setView('detail')
+      setView('shelf')
     }
   }, [])
 

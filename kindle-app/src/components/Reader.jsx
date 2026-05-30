@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { App as CapApp } from '@capacitor/app'
 import { fetchBookText } from '../utils/api'
 import { useHighlights } from '../hooks/useHighlights'
 import Dictionary from './Dictionary'
@@ -21,11 +22,9 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const [fullText, setFullText]   = useState('')
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState(null)
-  const [offset, setOffset]       = useState(0)   // px from top of content
-  const [pageH, setPageH]         = useState(0)   // visible page height px
-  const [totalH, setTotalH]       = useState(0)   // full content height px
-  const [flipping, setFlipping]   = useState(null) // 'fwd' | 'bck' | null
-  const [flipDone, setFlipDone]   = useState(false)
+  const [offset, setOffset]       = useState(0)
+  const [pageH, setPageH]         = useState(0)
+  const [totalH, setTotalH]       = useState(0)
   const [showMenu, setShowMenu]   = useState(false)
   const [dictWord, setDictWord]   = useState(null)
   const [dictPos, setDictPos]     = useState(null)
@@ -33,32 +32,42 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const [highlightColor, setHighlightColor] = useState('#FFD700')
   const [fontSize, setFontSize]   = useState(18)
   const [showHighlightPanel, setShowHighlightPanel] = useState(false)
+  const [hasSelection, setHasSelection] = useState(false)
 
-  const windowRef = useRef(null) // overflow:hidden viewport
-  const innerRef  = useRef(null) // full text content
-  const touchStartX = useRef(null)
-  const touchStartY = useRef(null)
+  const windowRef   = useRef(null)
+  const innerRef    = useRef(null)
+  const frontRef    = useRef(null)  // front page layer element
+  const backRef     = useRef(null)  // back page layer element
+  const foldRef     = useRef(null)  // fold shadow strip
+  const dragState   = useRef(null)  // { dir, startX, lastX, backOffset }
+  const offsetRef   = useRef(0)     // mirrors offset for use in event handlers
+  const pageHRef    = useRef(0)
+  const totalHRef   = useRef(0)
 
   const { highlights, addHighlight, removeHighlight } = useHighlights(book.id)
 
-  // --- Load text ---
+  // Keep refs in sync
+  useEffect(() => { offsetRef.current = offset }, [offset])
+  useEffect(() => { pageHRef.current = pageH }, [pageH])
+  useEffect(() => { totalHRef.current = totalH }, [totalH])
+
+  // Load text
   useEffect(() => {
     setLoading(true); setError(null); setOffset(0)
     fetchBookText(book)
-      .then(text => { setFullText(text) })
+      .then(text => setFullText(text))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [book.id])
 
-  // --- Measure heights after render ---
+  // Measure heights
   const measure = useCallback(() => {
     if (!windowRef.current || !innerRef.current) return
     const ph = windowRef.current.clientHeight
     const th = innerRef.current.scrollHeight
     setPageH(ph)
     setTotalH(th)
-    // Restore saved progress position
-    if (initialProgress > 0 && offset === 0) {
+    if (initialProgress > 0 && offsetRef.current === 0) {
       const target = Math.round((initialProgress / 100) * (th - ph))
       const snapped = Math.round(target / ph) * ph
       setOffset(Math.max(0, Math.min(snapped, th - ph)))
@@ -67,7 +76,6 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
 
   useEffect(() => {
     if (!fullText) return
-    // Wait one frame for DOM to paint, then measure
     const id = requestAnimationFrame(() => measure())
     return () => cancelAnimationFrame(id)
   }, [fullText, fontSize, measure])
@@ -78,59 +86,190 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     return () => ro.disconnect()
   }, [measure])
 
-  // --- Track progress ---
+  // Track progress
   useEffect(() => {
     if (!pageH || !totalH) return
     const pct = Math.round((offset / Math.max(totalH - pageH, 1)) * 100)
     setProgress(book.id, Math.min(100, Math.max(0, pct)))
   }, [offset, pageH, totalH])
 
-  // --- Navigation ---
+  // Android back button
+  useEffect(() => {
+    let handle
+    try {
+      CapApp.addListener('backButton', () => {
+        if (showMenu)            { setShowMenu(false); return }
+        if (showHighlightPanel)  { setShowHighlightPanel(false); return }
+        if (showRecs)            { setShowRecs(false); return }
+        if (dictWord)            { setDictWord(null); return }
+        onBack()
+      }).then(h => { handle = h })
+    } catch {}
+    return () => { try { handle?.remove() } catch {} }
+  }, [showMenu, showHighlightPanel, showRecs, dictWord, onBack])
+
+  // Track text selection for highlight button
+  useEffect(() => {
+    const update = () => {
+      const sel = window.getSelection()?.toString().trim()
+      setHasSelection(!!(sel && sel.length > 1))
+    }
+    document.addEventListener('selectionchange', update)
+    return () => document.removeEventListener('selectionchange', update)
+  }, [])
+
   const maxOffset = Math.max(0, totalH - pageH)
   const atStart   = offset <= 0
   const atEnd     = offset >= maxOffset
 
-  const goForward = useCallback(() => {
-    if (atEnd || flipping) return
-    const next = Math.min(offset + pageH, maxOffset)
-    setFlipping('fwd')
-    // Halfway through animation: update content position
-    setTimeout(() => { setOffset(next); setFlipDone(true) }, 180)
-    setTimeout(() => { setFlipping(null); setFlipDone(false) }, 380)
-  }, [atEnd, flipping, offset, pageH, maxOffset])
+  // ───── Drag page-turn helpers ─────
 
-  const goBack = useCallback(() => {
-    if (atStart || flipping) return
-    const next = Math.max(offset - pageH, 0)
-    setFlipping('bck')
-    setTimeout(() => { setOffset(next); setFlipDone(true) }, 180)
-    setTimeout(() => { setFlipping(null); setFlipDone(false) }, 380)
-  }, [atStart, flipping, offset, pageH])
+  // Directly update clip-paths on DOM refs (no React setState during drag)
+  const applyDragVisuals = useCallback((dir, progress) => {
+    const front = frontRef.current
+    const back  = backRef.current
+    const fold  = foldRef.current
+    if (!front || !back) return
+    const w = windowRef.current.offsetWidth
+    const foldX = dir === 'fwd' ? w * (1 - progress) : w * progress
 
+    if (dir === 'fwd') {
+      front.style.clipPath = `polygon(0 0,${foldX}px 0,${foldX}px 100%,0 100%)`
+      back.style.clipPath  = `polygon(${foldX}px 0,100% 0,100% 100%,${foldX}px 100%)`
+    } else {
+      front.style.clipPath = `polygon(${foldX}px 0,100% 0,100% 100%,${foldX}px 100%)`
+      back.style.clipPath  = `polygon(0 0,${foldX}px 0,${foldX}px 100%,0 100%)`
+    }
+    if (fold) {
+      fold.style.left    = `${foldX - 18}px`
+      fold.style.opacity = String(Math.min(1, progress * 4))
+    }
+  }, [])
+
+  const resetDragVisuals = useCallback(() => {
+    if (frontRef.current) frontRef.current.style.clipPath = ''
+    if (backRef.current)  backRef.current.style.clipPath  = ''
+    if (foldRef.current)  foldRef.current.style.opacity   = '0'
+  }, [])
+
+  const animateToProgress = useCallback((dir, fromP, toP, onDone) => {
+    const duration = Math.max(80, Math.abs(toP - fromP) * 280)
+    const start = performance.now()
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration)
+      // ease-out cubic
+      const e = 1 - Math.pow(1 - t, 3)
+      applyDragVisuals(dir, fromP + (toP - fromP) * e)
+      if (t < 1) requestAnimationFrame(tick)
+      else onDone()
+    }
+    requestAnimationFrame(tick)
+  }, [applyDragVisuals])
+
+  // Commit or abort after finger-up
+  const finishDrag = useCallback((dir, progress) => {
+    const THRESHOLD = 0.3
+    const curOff = offsetRef.current
+    const ph     = pageHRef.current
+    const maxOff = Math.max(0, totalHRef.current - ph)
+
+    if (progress >= THRESHOLD) {
+      animateToProgress(dir, progress, 1.0, () => {
+        const next = dir === 'fwd'
+          ? Math.min(curOff + ph, maxOff)
+          : Math.max(curOff - ph, 0)
+        resetDragVisuals()
+        dragState.current = null
+        setOffset(next)
+      })
+    } else {
+      animateToProgress(dir, progress, 0, () => {
+        resetDragVisuals()
+        dragState.current = null
+      })
+    }
+  }, [animateToProgress, resetDragVisuals])
+
+  // Attach non-passive touchmove to the window element
+  useEffect(() => {
+    const el = windowRef.current
+    if (!el) return
+    const onMove = (e) => {
+      const ds = dragState.current
+      if (!ds) return
+      e.preventDefault()
+      const x = e.touches[0].clientX
+      ds.lastX = x
+      const w = el.offsetWidth
+      const progress = ds.dir === 'fwd'
+        ? Math.max(0, Math.min(1, (ds.startX - x) / w))
+        : Math.max(0, Math.min(1, (x - ds.startX) / w))
+      applyDragVisuals(ds.dir, progress)
+    }
+    el.addEventListener('touchmove', onMove, { passive: false })
+    return () => el.removeEventListener('touchmove', onMove)
+  }, [applyDragVisuals])
+
+  const handleTouchStart = useCallback((e) => {
+    if (dragState.current) return
+    // Ignore touches inside menus/panels
+    if (e.target.closest?.('.reader-menu,.highlights-panel,.recs-panel,.dictionary-popup,.reader-topbar,.reader-nav')) return
+
+    const x = e.touches[0].clientX
+    const w = windowRef.current?.offsetWidth || window.innerWidth
+    const curOff = offsetRef.current
+    const ph     = pageHRef.current
+    const maxOff = Math.max(0, totalHRef.current - ph)
+
+    let dir = null
+    if (x > w * 0.55 && curOff < maxOff) dir = 'fwd'
+    else if (x < w * 0.45 && curOff > 0) dir = 'bck'
+    if (!dir) return
+
+    const backOffset = dir === 'fwd'
+      ? Math.min(curOff + ph, maxOff)
+      : Math.max(curOff - ph, 0)
+
+    dragState.current = { dir, startX: x, lastX: x, backOffset }
+  }, [])
+
+  const handleTouchEnd = useCallback((e) => {
+    const ds = dragState.current
+    if (!ds) return
+    const x = e.changedTouches[0].clientX
+    const w = windowRef.current?.offsetWidth || window.innerWidth
+
+    // Quick swipe detection (no drag layer yet) — treat as instant flip
+    const rawProgress = ds.dir === 'fwd'
+      ? (ds.startX - x) / w
+      : (x - ds.startX) / w
+
+    const progress = Math.max(0, Math.min(1, rawProgress))
+    finishDrag(ds.dir, Math.max(progress, Math.abs(ds.startX - x) > 50 ? 0.4 : 0))
+  }, [finishDrag])
+
+  // Keyboard nav
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === 'ArrowRight') goForward()
-      if (e.key === 'ArrowLeft') goBack()
+      const maxOff = Math.max(0, totalHRef.current - pageHRef.current)
+      if (e.key === 'ArrowRight') {
+        const next = Math.min(offsetRef.current + pageHRef.current, maxOff)
+        animateToProgress('fwd', 0, 1, () => { resetDragVisuals(); dragState.current = null; setOffset(next) })
+        dragState.current = { dir: 'fwd', startX: 0, lastX: 0, backOffset: next }
+      }
+      if (e.key === 'ArrowLeft') {
+        const next = Math.max(offsetRef.current - pageHRef.current, 0)
+        animateToProgress('bck', 0, 1, () => { resetDragVisuals(); dragState.current = null; setOffset(next) })
+        dragState.current = { dir: 'bck', startX: 0, lastX: 0, backOffset: next }
+      }
       if (e.key === 'Escape') { setShowMenu(false); setDictWord(null) }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [goForward, goBack])
-
-  const handleTouchStart = (e) => {
-    touchStartX.current = e.touches[0].clientX
-    touchStartY.current = e.touches[0].clientY
-  }
-  const handleTouchEnd = (e) => {
-    if (touchStartX.current === null) return
-    const dx = touchStartX.current - e.changedTouches[0].clientX
-    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current)
-    if (Math.abs(dx) > 60 && Math.abs(dx) > dy) { dx > 0 ? goForward() : goBack() }
-    touchStartX.current = null
-  }
+  }, [animateToProgress, resetDragVisuals])
 
   const handleTextClick = (e) => {
-    if (e.target.closest('.reader-menu, .highlights-panel, .recs-panel, .dictionary-popup')) return
+    if (e.target.closest('.reader-menu,.highlights-panel,.recs-panel,.dictionary-popup')) return
     const sel = window.getSelection()?.toString().trim()
     if (sel && sel.length > 1 && sel.split(' ').length <= 5) {
       const rect = window.getSelection().getRangeAt(0).getBoundingClientRect()
@@ -147,18 +286,29 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const pageIndex = pageH > 0 ? Math.floor(offset / pageH) : 0
     addHighlight(sel, pageIndex, highlightColor)
     window.getSelection().removeAllRanges()
+    setHasSelection(false)
     setDictWord(null)
   }
 
-  // Progress info
   const currentPage  = pageH > 0 ? Math.floor(offset / pageH) + 1 : 1
   const totalPages   = pageH > 0 ? Math.ceil(totalH / pageH) : 1
   const progressPct  = Math.round((offset / Math.max(totalH - pageH, 1)) * 100)
-  const displayHtml  = applyHighlights(fullText, highlights)
+
+  const displayHtml = applyHighlights(fullText, highlights)
     .replace(/\n\n+/g, '</p><p>')
     .replace(/\n/g, '<br/>')
 
-  // --- Loading / Error states ---
+  const backOffset = dragState.current
+    ? dragState.current.backOffset
+    : offset < maxOffset ? offset + pageH : offset - pageH
+
+  const pageStyle = (off) => ({
+    transform: `translateY(-${off}px)`,
+    fontSize,
+  })
+
+  const pageContent = `<p>${displayHtml}</p>`
+
   if (loading) {
     return (
       <div className={`reader-loading ${nightMode ? 'night' : ''}`}>
@@ -235,48 +385,66 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
         </div>
       )}
 
-      {/* Page area */}
-      <div className={`book-reader-wrap ${flipping || ''}`}>
-        {/* Page curl overlay — animates on top during flip */}
-        {flipping && (
-          <div className={`page-curl page-curl-${flipping} ${flipDone ? 'curl-done' : ''}`} />
-        )}
-
-        {/* The visible window — overflow hidden, full text translated up */}
-        <div className="page-window" ref={windowRef}>
+      {/* Page area — two stacked layers for drag flip */}
+      <div className="book-reader-wrap" ref={windowRef}>
+        {/* Back layer: page being revealed */}
+        <div className="page-layer page-layer-back" ref={backRef}>
           <div className="page-paper">
-            {/* Binding shadow */}
+            <div className="binding-shadow" />
+            <div
+              className="page-text-inner"
+              style={pageStyle(backOffset)}
+              dangerouslySetInnerHTML={{ __html: pageContent }}
+            />
+          </div>
+        </div>
+
+        {/* Front layer: current page, gets clipped during drag */}
+        <div className="page-layer page-layer-front" ref={frontRef}>
+          <div className="page-paper">
             <div className="binding-shadow" />
             <div
               ref={innerRef}
               className="page-text-inner"
-              style={{
-                transform: `translateY(-${offset}px)`,
-                fontSize,
-                transition: flipping ? 'none' : undefined,
-              }}
-              dangerouslySetInnerHTML={{ __html: `<p>${displayHtml}</p>` }}
+              style={pageStyle(offset)}
+              dangerouslySetInnerHTML={{ __html: pageContent }}
             />
           </div>
         </div>
+
+        {/* Fold shadow strip */}
+        <div className="fold-shadow" ref={foldRef} />
       </div>
 
       {/* Navigation */}
       <div className="reader-nav">
-        <button className={`nav-btn ${atStart ? 'disabled' : ''}`} onClick={goBack} disabled={atStart}>‹</button>
+        <button className={`nav-btn ${atStart ? 'disabled' : ''}`}
+          onClick={() => {
+            if (atStart || dragState.current) return
+            dragState.current = { dir: 'bck', startX: 0, lastX: 0, backOffset: Math.max(offset - pageH, 0) }
+            finishDrag('bck', 1)
+          }} disabled={atStart}>‹</button>
         <div className="reader-progress-info">
           <div className="progress-bar-reader">
             <div className="progress-fill-reader" style={{ width: `${Math.max(1, progressPct)}%` }} />
           </div>
           <span className="progress-text">{Math.min(100, progressPct)}% · Page {currentPage} of {totalPages}</span>
         </div>
-        <button className={`nav-btn ${atEnd ? 'disabled' : ''}`} onClick={goForward} disabled={atEnd}>›</button>
+        <button className={`nav-btn ${atEnd ? 'disabled' : ''}`}
+          onClick={() => {
+            if (atEnd || dragState.current) return
+            dragState.current = { dir: 'fwd', startX: 0, lastX: 0, backOffset: Math.min(offset + pageH, maxOffset) }
+            finishDrag('fwd', 1)
+          }} disabled={atEnd}>›</button>
       </div>
 
-      {/* Highlight button — shown after text selection */}
-      <button className="float-hl-btn" onClick={handleHighlight} onTouchEnd={e => { e.stopPropagation(); handleHighlight() }}>
-        <span style={{ color: highlightColor }}>■</span> Highlight
-      </button>
+      {/* Highlight button — only visible when text is selected */}
+      {hasSelection && (
+        <button className="float-hl-btn" onClick={handleHighlight}
+          onTouchEnd={e => { e.stopPropagation(); handleHighlight() }}>
+          <span style={{ color: highlightColor }}>■</span> Highlight
+        </button>
+      )}
 
       {dictWord && (
         <Dictionary word={dictWord} position={dictPos} onClose={() => setDictWord(null)} nightMode={nightMode} />

@@ -90,7 +90,39 @@ export async function fetchBooksBySubject(subject, page = 1) {
   return getJson(`${GUTENDEX}/books/?topic=${encodeURIComponent(subject)}&sort=popular&page=${page}`)
 }
 
+const BOOK_CACHE_PREFIX = 'tome_bk_'
+const MAX_BOOK_CACHE = 8
+
+function readBookCache(bookId) {
+  try {
+    const raw = localStorage.getItem(BOOK_CACHE_PREFIX + bookId)
+    if (!raw) return null
+    return JSON.parse(raw).text || null
+  } catch { return null }
+}
+
+function writeBookCache(bookId, text) {
+  try {
+    // Evict oldest entries if over limit
+    const entries = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k?.startsWith(BOOK_CACHE_PREFIX)) {
+        try { entries.push({ k, ts: JSON.parse(localStorage.getItem(k)).ts }) } catch {}
+      }
+    }
+    entries.sort((a, b) => a.ts - b.ts)
+    while (entries.length >= MAX_BOOK_CACHE) {
+      localStorage.removeItem(entries.shift().k)
+    }
+    localStorage.setItem(BOOK_CACHE_PREFIX + bookId, JSON.stringify({ text, ts: Date.now() }))
+  } catch {}
+}
+
 export async function fetchBookText(book) {
+  const cached = readBookCache(book.id)
+  if (cached) return cached
+
   const formats = book.formats || {}
   const apiUrl =
     formats['text/plain; charset=utf-8'] ||
@@ -106,7 +138,11 @@ export async function fetchBookText(book) {
   for (const url of urlsToTry) {
     try {
       const text = await getText(url)
-      if (text && text.length > 500) return cleanGutenbergText(text)
+      if (text && text.length > 500) {
+        const clean = cleanGutenbergText(text)
+        writeBookCache(book.id, clean)
+        return clean
+      }
     } catch (e) {
       lastErr = e
     }
