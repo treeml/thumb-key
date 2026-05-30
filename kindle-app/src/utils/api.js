@@ -1,25 +1,27 @@
 const GUTENDEX = 'https://gutendex.com'
 const DICT_API = 'https://api.dictionaryapi.dev/api/v2/entries/en'
 
-// AbortSignal.timeout isn't supported in all Android WebViews — use AbortController instead
-function timeoutSignal(ms) {
-  const ctrl = new AbortController()
-  setTimeout(() => ctrl.abort(), ms)
-  return ctrl.signal
+// Promise.race timeout — works on all Android WebView versions
+function timedFetch(url, ms = 12000) {
+  const timer = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), ms)
+  )
+  return Promise.race([fetch(url), timer])
 }
 
-async function fetchWithProxy(url) {
+// Try a URL through multiple CORS proxies
+async function fetchViaProxy(url) {
   const proxies = [
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
     `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    `https://corsproxy.org/?${encodeURIComponent(url)}`,
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    `https://thingproxy.freeboard.io/fetch/${url}`,
   ]
   let lastErr
   for (const proxy of proxies) {
     try {
-      const res = await fetch(proxy, { signal: timeoutSignal(12000) })
+      const res = await timedFetch(proxy, 14000)
       if (res.ok) return res
-      lastErr = new Error(`HTTP ${res.status}`)
+      lastErr = new Error(`Proxy returned ${res.status}`)
     } catch (e) {
       lastErr = e
     }
@@ -27,27 +29,34 @@ async function fetchWithProxy(url) {
   throw lastErr || new Error('All proxies failed')
 }
 
+// Direct first, then proxy fallback
+async function smartFetch(url) {
+  try {
+    const res = await timedFetch(url, 8000)
+    if (res.ok) return res
+  } catch {
+    // CORS / network error — fall through to proxy
+  }
+  return fetchViaProxy(url)
+}
+
 export async function searchBooks(query, page = 1) {
   const url = query
     ? `${GUTENDEX}/books/?search=${encodeURIComponent(query)}&page=${page}`
     : `${GUTENDEX}/books/?sort=popular&page=${page}`
-  const res = await fetch(url, { signal: timeoutSignal(10000) })
-  if (!res.ok) throw new Error('Failed to fetch books')
+  const res = await smartFetch(url)
   return res.json()
 }
 
 export async function getBook(id) {
-  const res = await fetch(`${GUTENDEX}/books/${id}`, { signal: timeoutSignal(10000) })
-  if (!res.ok) throw new Error('Failed to fetch book')
+  const res = await smartFetch(`${GUTENDEX}/books/${id}`)
   return res.json()
 }
 
 export async function fetchBooksBySubject(subject, page = 1) {
-  const res = await fetch(
-    `${GUTENDEX}/books/?topic=${encodeURIComponent(subject)}&sort=popular&page=${page}`,
-    { signal: timeoutSignal(10000) }
+  const res = await smartFetch(
+    `${GUTENDEX}/books/?topic=${encodeURIComponent(subject)}&sort=popular&page=${page}`
   )
-  if (!res.ok) throw new Error('Failed to fetch books by subject')
   return res.json()
 }
 
@@ -61,18 +70,7 @@ export async function fetchBookText(book) {
 
   if (!textUrl) throw new Error('No plain text available for this book')
 
-  // Try direct first (works in Capacitor if CORS headers allow it)
-  try {
-    const direct = await fetch(textUrl, { signal: timeoutSignal(8000) })
-    if (direct.ok) {
-      const text = await direct.text()
-      return cleanGutenbergText(text)
-    }
-  } catch {
-    // fall through to proxies
-  }
-
-  const res = await fetchWithProxy(textUrl)
+  const res = await smartFetch(textUrl)
   const text = await res.text()
   return cleanGutenbergText(text)
 }
@@ -114,8 +112,7 @@ function cleanGutenbergText(text) {
 export async function lookupWord(word) {
   const clean = word.toLowerCase().replace(/[^a-z'-]/g, '')
   if (!clean) throw new Error('Invalid word')
-  const res = await fetch(`${DICT_API}/${encodeURIComponent(clean)}`, { signal: timeoutSignal(8000) })
-  if (!res.ok) throw new Error('Word not found')
+  const res = await smartFetch(`${DICT_API}/${encodeURIComponent(clean)}`)
   return res.json()
 }
 

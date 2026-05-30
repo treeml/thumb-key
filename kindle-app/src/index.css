@@ -151,6 +151,23 @@ input, textarea { font-family: inherit; }
   letter-spacing: 0.3px;
 }
 .shelf-scroll-btns { display: flex; gap: 6px; }
+
+.shelf-error {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 20px; color: var(--text-muted); font-size: 13px;
+}
+.retry-btn {
+  padding: 6px 14px; border-radius: 14px;
+  border: 1px solid var(--border); color: var(--gold);
+  font-size: 12px; font-weight: 600; transition: all 0.2s;
+}
+.retry-btn:hover { background: rgba(201,168,76,0.1); }
+.shelf-empty { padding: 16px 20px; color: var(--text-muted); font-size: 13px; }
+.search-error-msg {
+  color: #e07b39; font-size: 13px; margin-bottom: 16px;
+  padding: 10px 14px; background: rgba(224,123,57,0.1);
+  border-radius: 8px; border: 1px solid rgba(224,123,57,0.2);
+}
 .shelf-scroll-btn {
   width: 32px; height: 32px;
   border-radius: 50%;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { searchBooks, fetchBooksBySubject } from '../utils/api'
 import BookCard from './BookCard'
 
@@ -16,7 +16,7 @@ const CATEGORIES = [
 // Module-level cache — survives component unmount/remount
 const sectionCache = {}
 
-function ShelfRow({ title, books, onSelect, getProgress, loading }) {
+function ShelfRow({ title, books, onSelect, getProgress, loading, error, onRetry }) {
   const rowRef = useRef(null)
   const scroll = (dir) => {
     if (rowRef.current) rowRef.current.scrollBy({ left: dir * 260, behavior: 'smooth' })
@@ -34,6 +34,15 @@ function ShelfRow({ title, books, onSelect, getProgress, loading }) {
       <div className="shelf-track" ref={rowRef}>
         {loading
           ? Array.from({ length: 6 }).map((_, i) => <div key={i} className="book-card-skeleton" />)
+          : error
+          ? (
+            <div className="shelf-error">
+              <span>Failed to load</span>
+              <button className="retry-btn" onClick={onRetry}>Retry</button>
+            </div>
+          )
+          : books.length === 0
+          ? <div className="shelf-empty">No books found</div>
           : books.map(book => (
             <BookCard
               key={book.id}
@@ -52,42 +61,50 @@ function ShelfRow({ title, books, onSelect, getProgress, loading }) {
 export default function Bookshelf({ onSelectBook, getProgress, myLibrary, searchQuery }) {
   const [sections, setSections] = useState(() => ({ ...sectionCache }))
   const [loading, setLoading] = useState({})
+  const [errors, setErrors] = useState({})
+
+  const fetchCategory = useCallback((cat) => {
+    delete sectionCache[cat.key]
+    setSections(p => { const n = { ...p }; delete n[cat.key]; return n })
+    setErrors(p => ({ ...p, [cat.key]: false }))
+    setLoading(p => ({ ...p, [cat.key]: true }))
+
+    const fetcher = cat.query ? fetchBooksBySubject(cat.query) : searchBooks(null, 1)
+    fetcher
+      .then(data => {
+        const results = data.results || []
+        sectionCache[cat.key] = results
+        setSections(p => ({ ...p, [cat.key]: results }))
+        setErrors(p => ({ ...p, [cat.key]: false }))
+      })
+      .catch(() => {
+        setErrors(p => ({ ...p, [cat.key]: true }))
+      })
+      .finally(() => setLoading(p => ({ ...p, [cat.key]: false })))
+  }, [])
 
   useEffect(() => {
     const timers = []
     CATEGORIES.forEach((cat, i) => {
-      if (sectionCache[cat.key]) return  // already cached, skip fetch
+      if (sectionCache[cat.key]) return  // already cached
 
-      const delay = i * 350
-      const t = setTimeout(() => {
-        setLoading(p => ({ ...p, [cat.key]: true }))
-        const fetcher = cat.query ? fetchBooksBySubject(cat.query) : searchBooks(null, 1)
-        fetcher
-          .then(data => {
-            const results = data.results || []
-            sectionCache[cat.key] = results
-            setSections(p => ({ ...p, [cat.key]: results }))
-          })
-          .catch(() => {
-            sectionCache[cat.key] = []
-            setSections(p => ({ ...p, [cat.key]: [] }))
-          })
-          .finally(() => setLoading(p => ({ ...p, [cat.key]: false })))
-      }, delay)
+      const t = setTimeout(() => fetchCategory(cat), i * 400)
       timers.push(t)
     })
     return () => timers.forEach(clearTimeout)
-  }, [])
+  }, [fetchCategory])
 
   const [searchResults, setSearchResults] = useState(null)
   const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState(false)
 
   useEffect(() => {
-    if (!searchQuery?.trim()) { setSearchResults(null); return }
+    if (!searchQuery?.trim()) { setSearchResults(null); setSearchError(false); return }
     setSearching(true)
+    setSearchError(false)
     searchBooks(searchQuery)
       .then(d => setSearchResults(d.results || []))
-      .catch(() => setSearchResults([]))
+      .catch(() => { setSearchResults([]); setSearchError(true) })
       .finally(() => setSearching(false))
   }, [searchQuery])
 
@@ -98,6 +115,7 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, search
           <h2>Results for "{searchQuery}"</h2>
           <span className="result-count">{searchResults.length} books</span>
         </div>
+        {searchError && <div className="search-error-msg">Connection error — check your internet and try again.</div>}
         <div className="search-results-grid">
           {searching
             ? Array.from({ length: 8 }).map((_, i) => <div key={i} className="book-card-skeleton" />)
@@ -105,7 +123,7 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, search
               <BookCard key={book.id} book={book} progress={getProgress(book.id)} onClick={onSelectBook} />
             ))
           }
-          {!searching && searchResults.length === 0 && (
+          {!searching && !searchError && searchResults.length === 0 && (
             <div className="empty-state">No books found. Try another search.</div>
           )}
         </div>
@@ -134,7 +152,9 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, search
           books={sections[cat.key] || []}
           onSelect={onSelectBook}
           getProgress={getProgress}
-          loading={loading[cat.key] ?? !sectionCache[cat.key]}
+          loading={!!loading[cat.key] || (!sectionCache[cat.key] && !errors[cat.key] && !sections[cat.key])}
+          error={!!errors[cat.key]}
+          onRetry={() => fetchCategory(cat)}
         />
       ))}
     </div>
