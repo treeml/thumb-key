@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 
 const SPINE_PALETTES = [
-  { base: '#8B2635', read: '#d4736b' },
+  { base: '#8B2635', read: '#c4736b' },
   { base: '#1B4F72', read: '#5a9ec9' },
   { base: '#1E8449', read: '#5ec98a' },
   { base: '#784212', read: '#c4895a' },
@@ -13,6 +13,18 @@ const SPINE_PALETTES = [
   { base: '#283593', read: '#6878d4' },
   { base: '#BF360C', read: '#e8855a' },
   { base: '#006064', read: '#30b0b8' },
+  { base: '#37474F', read: '#78909c' },
+  { base: '#4E342E', read: '#8d6e63' },
+  { base: '#1B5E20', read: '#66bb6a' },
+  { base: '#880E4F', read: '#e06292' },
+  { base: '#4527A0', read: '#9575cd' },
+  { base: '#0D47A1', read: '#64b5f6' },
+  { base: '#E65100', read: '#ffb74d' },
+  { base: '#1A237E', read: '#7986cb' },
+  { base: '#33691E', read: '#8bc34a' },
+  { base: '#6A1B9A', read: '#ce93d8' },
+  { base: '#00695C', read: '#4db6ac' },
+  { base: '#827717', read: '#dce775' },
 ]
 
 function bookPalette(id) { return SPINE_PALETTES[Number(id) % SPINE_PALETTES.length] }
@@ -57,26 +69,63 @@ function BookHoverCard({ book, progress, onOpen, onPutBack }) {
   const pct      = Math.round((progress || 0) * 100)
   const coverUrl = book.formats?.['image/jpeg']
   const authors  = book.authors?.map(a => a.name).join(', ') || ''
-  const t0       = useRef(null)
 
-  const onTouchStart = (e) => { t0.current = e.touches[0].clientY }
-  const onTouchEnd   = (e) => {
-    if (t0.current !== null) {
-      const dy = t0.current - e.changedTouches[0].clientY
-      if (dy > 40) { onPutBack(); t0.current = null; return }
-      t0.current = null
+  // Guard against tap-bleed: the spine tap that triggered this card will also
+  // fire a click on us (same coordinates, same event loop). Block all
+  // interactions for 380ms after mount.
+  const ready    = useRef(false)
+  const t0       = useRef(null)
+  const didSwipe = useRef(false)
+
+  useEffect(() => {
+    const id = setTimeout(() => { ready.current = true }, 380)
+    return () => clearTimeout(id)
+  }, [])
+
+  const handleBackdropClick = () => {
+    if (!ready.current) return
+    onPutBack()
+  }
+
+  const handleCardClick = (e) => {
+    e.stopPropagation()
+    if (!ready.current) return
+    if (didSwipe.current) { didSwipe.current = false; return }
+    onOpen()
+  }
+
+  const onTouchStart = (e) => {
+    if (!ready.current) return
+    t0.current = e.touches[0].clientY
+    didSwipe.current = false
+  }
+
+  const onTouchMove = (e) => {
+    if (!ready.current || t0.current === null) return
+    const dy = t0.current - e.touches[0].clientY
+    // Start tracking swipe direction
+    if (dy > 15) didSwipe.current = true
+  }
+
+  const onTouchEnd = (e) => {
+    if (!ready.current || t0.current === null) return
+    const dy = t0.current - e.changedTouches[0].clientY
+    t0.current = null
+    if (dy > 40) {
+      didSwipe.current = true
+      onPutBack()
     }
   }
 
   return (
-    <div className="lib-hover-backdrop" onClick={onPutBack}>
+    <div className="lib-hover-backdrop" onClick={handleBackdropClick}>
       <div
         className="lib-hover-card"
-        onClick={e => { e.stopPropagation(); onOpen() }}
+        onClick={handleCardClick}
         onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       >
-        {/* Book with spine + cover */}
         <div className="lib-hover-book3d">
           <div className="lib-hover-spine" style={{ background: pal.base }} />
           <div className="lib-hover-cover" style={{ background: pal.base }}>
@@ -136,7 +185,7 @@ function BookOpenOverlay({ book, progress }) {
 }
 
 export default function Library({ myLibrary, getProgress, onBack, onRead, nightMode }) {
-  const [phase, setPhase]         = useState('shelf')
+  const [phase, setPhase]           = useState('shelf')
   const [activeBook, setActiveBook] = useState(null)
 
   const handleTapBook = useCallback((book) => {
@@ -194,7 +243,7 @@ export default function Library({ myLibrary, getProgress, onBack, onRead, nightM
       ) : (
         <div className="library-shelves-wrap">
           <div className="library-shelves">
-            <p className="library-hint">Tap a book to preview it</p>
+            <p className="library-hint">Tap a book · tap again to open · swipe up to shelve</p>
             {rows.map((rowBooks, ri) => (
               <div key={ri} className="lib-shelf-row">
                 <div className="lib-shelf-books">
