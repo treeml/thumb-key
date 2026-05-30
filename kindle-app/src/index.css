@@ -509,16 +509,16 @@ input, textarea { font-family: inherit; }
 .menu-item:hover { color: #c9a84c; }
 .menu-section input[type=range] { width: 100%; accent-color: #c9a84c; }
 
-/* ===== PAGE READER — two-layer drag flip ===== */
+/* ===== PAGE READER — three-layer 3D fold ===== */
 .book-reader-wrap {
   flex: 1; position: relative; overflow: hidden;
   padding: 10px 14px;
 }
 
-/* Both layers fill the entire page area */
+/* Static layers: both flush with the wrap interior */
 .page-layer {
   position: absolute;
-  inset: 10px 14px;
+  inset: 0;
   overflow: hidden;
 }
 .page-layer-back  { z-index: 1; }
@@ -548,7 +548,7 @@ input, textarea { font-family: inherit; }
 
 .page-text-inner {
   position: relative;
-  padding: 40px 52px 40px 56px;
+  padding: 32px 44px 32px 48px;
   font-family: 'Crimson Pro', Georgia, serif;
   line-height: 1.85;
   color: inherit;
@@ -560,33 +560,39 @@ input, textarea { font-family: inherit; }
 .page-text-inner mark.highlight { border-radius: 3px; }
 
 @media (max-width: 480px) {
-  .page-text-inner { padding: 24px 20px; }
-  .book-reader-wrap { padding: 6px 8px; }
-  .page-layer { inset: 6px 8px; }
+  .page-text-inner { padding: 20px 18px; }
 }
 
-/* Fold strip — travels across the page during a drag turn, simulates the physical crease */
-.fold-strip {
-  position: absolute; top: 0; bottom: 0;
-  width: 0; z-index: 15;
-  pointer-events: none; opacity: 0;
-  /* Left half: shadow cast on revealed page; centre: bright paper edge; right: back of curling page */
-  background: linear-gradient(90deg,
-    rgba(0,0,0,0.14)  0%,
-    rgba(0,0,0,0.05)  18%,
-    rgba(255,252,240,0.96) 36%,
-    rgba(255,255,255,1.00) 50%,
-    rgba(238,222,192,0.90) 64%,
-    rgba(200,175,135,0.75) 80%,
-    rgba(0,0,0,0.18)  100%
-  );
-  box-shadow: 0 0 8px rgba(0,0,0,0.12);
+/* ── 3D fold element — the turning portion of the current page ── */
+.page-fold {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: 0; width: 0;
+  z-index: 3;
+  overflow: hidden;
+  opacity: 0;
+  will-change: transform, width, opacity, left;
+}
+.page-paper-fold {
+  position: absolute !important;
+  top: 0; bottom: 0;
+  left: 0;
+  /* width set via foldInnerRef DOM */
+}
+.page-text-fold {
+  position: absolute !important;
+  top: 0;
+  /* left, width, transform all set via DOM ref */
+}
+/* Crease shadow on the fold's leading edge */
+.fold-edge-shadow {
+  position: absolute; inset: 0; left: 0; width: 20px;
+  background: linear-gradient(90deg, rgba(0,0,0,0.25) 0%, transparent 100%);
+  pointer-events: none; z-index: 10;
 }
 
 /* Page colour swatches */
-.page-color-swatches {
-  display: flex; gap: 8px; flex-wrap: wrap;
-}
+.page-color-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
 .page-color-swatch {
   width: 34px; height: 34px; border-radius: 50%;
   border: 2px solid rgba(0,0,0,0.15);
@@ -595,8 +601,7 @@ input, textarea { font-family: inherit; }
   transition: transform 0.15s, border-color 0.15s;
 }
 .page-color-swatch.active {
-  border-color: #5a3a1a;
-  transform: scale(1.2);
+  border-color: #5a3a1a; transform: scale(1.2);
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
