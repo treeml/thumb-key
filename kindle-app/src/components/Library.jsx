@@ -35,7 +35,7 @@ function SpineBook({ book, progress, onTap, isActive }) {
   const pal = bookPalette(book.id)
   const h   = bookH(book.id)
   const w   = bookW(book.id)
-  const pct = Math.round((progress || 0) * 100)
+  const pct = Math.round(progress || 0)
 
   const bg = pct > 0
     ? `linear-gradient(to top, ${pal.read} 0%, ${pal.read} ${pct}%, ${pal.base} ${pct}%, ${pal.base} 100%)`
@@ -66,7 +66,7 @@ function SpineBook({ book, progress, onTap, isActive }) {
 
 function BookHoverCard({ book, progress, onOpen, onPutBack }) {
   const pal      = bookPalette(book.id)
-  const pct      = Math.round((progress || 0) * 100)
+  const pct      = Math.round(progress || 0)
   const coverUrl = book.formats?.['image/jpeg']
   const authors  = book.authors?.map(a => a.name).join(', ') || ''
 
@@ -158,7 +158,7 @@ function BookHoverCard({ book, progress, onOpen, onPutBack }) {
 
 function BookOpenOverlay({ book, progress }) {
   const pal     = bookPalette(book.id)
-  const pct     = Math.round((progress || 0) * 100)
+  const pct     = Math.round(progress || 0)
   const authors = book.authors?.map(a => a.name).join(', ') || ''
 
   return (
