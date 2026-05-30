@@ -1,156 +1,164 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
-import { fetchBookText, getBookAuthors } from '../utils/api'
+import { fetchBookText } from '../utils/api'
 import { useHighlights } from '../hooks/useHighlights'
 import Dictionary from './Dictionary'
 import Recommendations from './Recommendations'
 
-const CHARS_PER_PAGE = 1800
-
-function paginateText(text) {
-  const paragraphs = text.split(/\n\n+/).filter(p => p.trim().length > 0)
-  const pages = []
-  let current = ''
-
-  for (const para of paragraphs) {
-    if (current.length + para.length > CHARS_PER_PAGE && current.length > 0) {
-      pages.push(current.trim())
-      current = para
-    } else {
-      current += (current ? '\n\n' : '') + para
-    }
-  }
-  if (current.trim()) pages.push(current.trim())
-  return pages
-}
-
-function applyHighlights(text, pageHighlights) {
-  if (!pageHighlights.length) return text
+function applyHighlights(text, hl) {
+  if (!hl.length) return text
   let result = text
-  // Sort by length descending to avoid nested replacement issues
-  const sorted = [...pageHighlights].sort((a, b) => b.text.length - a.text.length)
-  for (const hl of sorted) {
-    const escaped = hl.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  for (const h of [...hl].sort((a, b) => b.text.length - a.text.length)) {
+    const esc = h.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     result = result.replace(
-      new RegExp(escaped, 'g'),
-      `<mark class="highlight" style="background:${hl.color}88" data-hl-id="${hl.id}">$&</mark>`
+      new RegExp(esc, 'g'),
+      `<mark class="highlight" style="background:${h.color}88">${h.text}</mark>`
     )
   }
   return result
 }
 
 export default function Reader({ book, nightMode, setProgress, initialProgress, onBack }) {
-  const [pages, setPages] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [pageIndex, setPageIndex] = useState(0)
-  const [flipping, setFlipping] = useState(null) // 'forward' | 'back' | null
-  const [showMenu, setShowMenu] = useState(false)
-  const [dictWord, setDictWord] = useState(null)
-  const [dictPos, setDictPos] = useState(null)
-  const [showRecs, setShowRecs] = useState(false)
+  const [fullText, setFullText]   = useState('')
+  const [loading, setLoading]     = useState(true)
+  const [error, setError]         = useState(null)
+  const [offset, setOffset]       = useState(0)   // px from top of content
+  const [pageH, setPageH]         = useState(0)   // visible page height px
+  const [totalH, setTotalH]       = useState(0)   // full content height px
+  const [flipping, setFlipping]   = useState(null) // 'fwd' | 'bck' | null
+  const [flipDone, setFlipDone]   = useState(false)
+  const [showMenu, setShowMenu]   = useState(false)
+  const [dictWord, setDictWord]   = useState(null)
+  const [dictPos, setDictPos]     = useState(null)
+  const [showRecs, setShowRecs]   = useState(false)
   const [highlightColor, setHighlightColor] = useState('#FFD700')
-  const [fontSize, setFontSize] = useState(18)
+  const [fontSize, setFontSize]   = useState(18)
   const [showHighlightPanel, setShowHighlightPanel] = useState(false)
 
-  const { highlights, addHighlight, removeHighlight, getPageHighlights } = useHighlights(book.id)
-  const pageRef = useRef(null)
+  const windowRef = useRef(null) // overflow:hidden viewport
+  const innerRef  = useRef(null) // full text content
   const touchStartX = useRef(null)
+  const touchStartY = useRef(null)
 
+  const { highlights, addHighlight, removeHighlight } = useHighlights(book.id)
+
+  // --- Load text ---
   useEffect(() => {
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null); setOffset(0)
     fetchBookText(book)
-      .then(text => {
-        const pgs = paginateText(text)
-        setPages(pgs)
-        if (initialProgress > 0) {
-          const startPage = Math.floor((initialProgress / 100) * pgs.length)
-          setPageIndex(Math.min(startPage, pgs.length - 1))
-        }
-      })
+      .then(text => { setFullText(text) })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [book.id])
 
-  useEffect(() => {
-    if (pages.length > 0) {
-      const pct = Math.round(((pageIndex + 1) / pages.length) * 100)
-      setProgress(book.id, pct)
+  // --- Measure heights after render ---
+  const measure = useCallback(() => {
+    if (!windowRef.current || !innerRef.current) return
+    const ph = windowRef.current.clientHeight
+    const th = innerRef.current.scrollHeight
+    setPageH(ph)
+    setTotalH(th)
+    // Restore saved progress position
+    if (initialProgress > 0 && offset === 0) {
+      const target = Math.round((initialProgress / 100) * (th - ph))
+      const snapped = Math.round(target / ph) * ph
+      setOffset(Math.max(0, Math.min(snapped, th - ph)))
     }
-  }, [pageIndex, pages.length])
+  }, [initialProgress])
+
+  useEffect(() => {
+    if (!fullText) return
+    // Wait one frame for DOM to paint, then measure
+    const id = requestAnimationFrame(() => measure())
+    return () => cancelAnimationFrame(id)
+  }, [fullText, fontSize, measure])
+
+  useEffect(() => {
+    const ro = new ResizeObserver(measure)
+    if (windowRef.current) ro.observe(windowRef.current)
+    return () => ro.disconnect()
+  }, [measure])
+
+  // --- Track progress ---
+  useEffect(() => {
+    if (!pageH || !totalH) return
+    const pct = Math.round((offset / Math.max(totalH - pageH, 1)) * 100)
+    setProgress(book.id, Math.min(100, Math.max(0, pct)))
+  }, [offset, pageH, totalH])
+
+  // --- Navigation ---
+  const maxOffset = Math.max(0, totalH - pageH)
+  const atStart   = offset <= 0
+  const atEnd     = offset >= maxOffset
 
   const goForward = useCallback(() => {
-    if (pageIndex >= pages.length - 1 || flipping) return
-    setFlipping('forward')
-    setTimeout(() => {
-      setPageIndex(p => Math.min(p + 1, pages.length - 1))
-      setFlipping(null)
-    }, 400)
-  }, [pageIndex, pages.length, flipping])
+    if (atEnd || flipping) return
+    const next = Math.min(offset + pageH, maxOffset)
+    setFlipping('fwd')
+    // Halfway through animation: update content position
+    setTimeout(() => { setOffset(next); setFlipDone(true) }, 180)
+    setTimeout(() => { setFlipping(null); setFlipDone(false) }, 380)
+  }, [atEnd, flipping, offset, pageH, maxOffset])
 
   const goBack = useCallback(() => {
-    if (pageIndex <= 0 || flipping) return
-    setFlipping('back')
-    setTimeout(() => {
-      setPageIndex(p => Math.max(p - 1, 0))
-      setFlipping(null)
-    }, 400)
-  }, [pageIndex, flipping])
+    if (atStart || flipping) return
+    const next = Math.max(offset - pageH, 0)
+    setFlipping('bck')
+    setTimeout(() => { setOffset(next); setFlipDone(true) }, 180)
+    setTimeout(() => { setFlipping(null); setFlipDone(false) }, 380)
+  }, [atStart, flipping, offset, pageH])
 
   useEffect(() => {
     const handler = (e) => {
       if (e.key === 'ArrowRight') goForward()
       if (e.key === 'ArrowLeft') goBack()
-      if (e.key === 'Escape') setShowMenu(false)
+      if (e.key === 'Escape') { setShowMenu(false); setDictWord(null) }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [goForward, goBack])
 
-  const handleTouchStart = (e) => { touchStartX.current = e.touches[0].clientX }
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }
   const handleTouchEnd = (e) => {
     if (touchStartX.current === null) return
-    const diff = touchStartX.current - e.changedTouches[0].clientX
-    if (Math.abs(diff) > 50) { diff > 0 ? goForward() : goBack() }
+    const dx = touchStartX.current - e.changedTouches[0].clientX
+    const dy = Math.abs(e.changedTouches[0].clientY - touchStartY.current)
+    if (Math.abs(dx) > 60 && Math.abs(dx) > dy) { dx > 0 ? goForward() : goBack() }
     touchStartX.current = null
   }
 
-  const handleWordSelect = (e) => {
-    const selection = window.getSelection()
-    const selected = selection?.toString().trim()
-    if (!selected || selected.split(' ').length > 4) return
-    if (selected.length < 2) return
-    const range = selection.getRangeAt(0)
-    const rect = range.getBoundingClientRect()
-    setDictWord(selected)
-    setDictPos({ x: rect.left + rect.width / 2, y: rect.bottom })
-  }
-
   const handleTextClick = (e) => {
-    if (e.target.closest('.dict-popup, .reader-menu, .reader-toolbar')) return
-    const selection = window.getSelection()
-    const selected = selection?.toString().trim()
-    if (selected && selected.length > 1) {
-      handleWordSelect(e)
+    if (e.target.closest('.reader-menu, .highlights-panel, .recs-panel, .dictionary-popup')) return
+    const sel = window.getSelection()?.toString().trim()
+    if (sel && sel.length > 1 && sel.split(' ').length <= 5) {
+      const rect = window.getSelection().getRangeAt(0).getBoundingClientRect()
+      setDictWord(sel)
+      setDictPos({ x: rect.left + rect.width / 2, y: rect.bottom })
     } else {
       setDictWord(null)
     }
   }
 
   const handleHighlight = () => {
-    const selection = window.getSelection()
-    const selected = selection?.toString().trim()
-    if (!selected || selected.length < 2) return
-    addHighlight(selected, pageIndex, highlightColor)
-    selection.removeAllRanges()
+    const sel = window.getSelection()?.toString().trim()
+    if (!sel || sel.length < 2) return
+    const pageIndex = pageH > 0 ? Math.floor(offset / pageH) : 0
+    addHighlight(sel, pageIndex, highlightColor)
+    window.getSelection().removeAllRanges()
     setDictWord(null)
   }
 
-  const progress = pages.length > 0 ? Math.round(((pageIndex + 1) / pages.length) * 100) : 0
-  const currentPageHighlights = getPageHighlights(pageIndex)
-  const rawText = pages[pageIndex] || ''
-  const displayHtml = applyHighlights(rawText, currentPageHighlights)
+  // Progress info
+  const currentPage  = pageH > 0 ? Math.floor(offset / pageH) + 1 : 1
+  const totalPages   = pageH > 0 ? Math.ceil(totalH / pageH) : 1
+  const progressPct  = Math.round((offset / Math.max(totalH - pageH, 1)) * 100)
+  const displayHtml  = applyHighlights(fullText, highlights)
+    .replace(/\n\n+/g, '</p><p>')
+    .replace(/\n/g, '<br/>')
 
+  // --- Loading / Error states ---
   if (loading) {
     return (
       <div className={`reader-loading ${nightMode ? 'night' : ''}`}>
@@ -163,7 +171,6 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       </div>
     )
   }
-
   if (error) {
     return (
       <div className={`reader-error ${nightMode ? 'night' : ''}`}>
@@ -176,7 +183,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   }
 
   return (
-    <div className={`reader-container ${nightMode ? 'night' : ''}`}
+    <div
+      className={`reader-container ${nightMode ? 'night' : ''}`}
       onClick={handleTextClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
@@ -194,120 +202,97 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
           <div className="menu-section">
             <label className="menu-label">Font Size</label>
             <div className="font-size-controls">
-              <button onClick={() => setFontSize(f => Math.max(12, f - 2))}>A-</button>
+              <button onClick={() => setFontSize(f => Math.max(13, f - 2))}>A-</button>
               <span>{fontSize}px</span>
-              <button onClick={() => setFontSize(f => Math.min(28, f + 2))}>A+</button>
+              <button onClick={() => setFontSize(f => Math.min(26, f + 2))}>A+</button>
             </div>
           </div>
           <div className="menu-section">
             <label className="menu-label">Highlight Color</label>
             <div className="color-swatches">
               {['#FFD700', '#90EE90', '#87CEEB', '#FFB6C1', '#DDA0DD'].map(c => (
-                <button
-                  key={c}
-                  className={`color-swatch ${highlightColor === c ? 'active' : ''}`}
-                  style={{ background: c }}
-                  onClick={() => setHighlightColor(c)}
-                />
+                <button key={c} className={`color-swatch ${highlightColor === c ? 'active' : ''}`}
+                  style={{ background: c }} onClick={() => setHighlightColor(c)} />
               ))}
             </div>
           </div>
-          <button className="menu-item" onClick={() => { setShowHighlightPanel(p=>!p); setShowMenu(false) }}>
+          <button className="menu-item" onClick={() => { setShowHighlightPanel(p => !p); setShowMenu(false) }}>
             📌 My Highlights ({highlights.length})
           </button>
-          <button className="menu-item" onClick={() => { setShowRecs(p=>!p); setShowMenu(false) }}>
+          <button className="menu-item" onClick={() => { setShowRecs(p => !p); setShowMenu(false) }}>
             ✨ Recommendations
           </button>
           <div className="menu-section">
-            <label className="menu-label">Jump to Page</label>
-            <div className="page-jump">
-              <input
-                type="range"
-                min="0" max={pages.length - 1}
-                value={pageIndex}
-                onChange={e => setPageIndex(Number(e.target.value))}
-              />
-            </div>
+            <label className="menu-label">Jump to position</label>
+            <input type="range" min="0" max="100" value={progressPct}
+              onChange={e => {
+                const pct = Number(e.target.value)
+                const raw = (pct / 100) * (totalH - pageH)
+                setOffset(Math.round(raw / pageH) * pageH)
+              }}
+            />
           </div>
         </div>
       )}
 
-      {/* Page book */}
-      <div className={`book-reader ${flipping ? `flip-${flipping}` : ''}`}>
-        <div className="book-page-container">
-          {/* Back of previous page (visible during forward flip) */}
-          <div className="page-back" />
-          {/* Main page */}
-          <div className="page-content" style={{ fontSize }}>
+      {/* Page area */}
+      <div className={`book-reader-wrap ${flipping || ''}`}>
+        {/* Page curl overlay — animates on top during flip */}
+        {flipping && (
+          <div className={`page-curl page-curl-${flipping} ${flipDone ? 'curl-done' : ''}`} />
+        )}
+
+        {/* The visible window — overflow hidden, full text translated up */}
+        <div className="page-window" ref={windowRef}>
+          <div className="page-paper">
+            {/* Binding shadow */}
+            <div className="binding-shadow" />
             <div
-              className="page-text"
-              dangerouslySetInnerHTML={{ __html: displayHtml.replace(/\n/g, '<br/>') }}
+              ref={innerRef}
+              className="page-text-inner"
+              style={{
+                transform: `translateY(-${offset}px)`,
+                fontSize,
+                transition: flipping ? 'none' : undefined,
+              }}
+              dangerouslySetInnerHTML={{ __html: `<p>${displayHtml}</p>` }}
             />
           </div>
-          {/* Page turn shadow */}
-          <div className="page-shadow" />
         </div>
       </div>
 
       {/* Navigation */}
       <div className="reader-nav">
-        <button
-          className={`nav-btn nav-prev ${pageIndex === 0 ? 'disabled' : ''}`}
-          onClick={goBack}
-          disabled={pageIndex === 0}
-        >‹</button>
-
+        <button className={`nav-btn ${atStart ? 'disabled' : ''}`} onClick={goBack} disabled={atStart}>‹</button>
         <div className="reader-progress-info">
           <div className="progress-bar-reader">
-            <div className="progress-fill-reader" style={{ width: `${progress}%` }} />
+            <div className="progress-fill-reader" style={{ width: `${Math.max(1, progressPct)}%` }} />
           </div>
-          <span className="progress-text">{progress}% · Page {pageIndex + 1} of {pages.length}</span>
+          <span className="progress-text">{Math.min(100, progressPct)}% · Page {currentPage} of {totalPages}</span>
         </div>
-
-        <button
-          className={`nav-btn nav-next ${pageIndex >= pages.length - 1 ? 'disabled' : ''}`}
-          onClick={goForward}
-          disabled={pageIndex >= pages.length - 1}
-        >›</button>
+        <button className={`nav-btn ${atEnd ? 'disabled' : ''}`} onClick={goForward} disabled={atEnd}>›</button>
       </div>
 
-      {/* Highlight toolbar - shows on text selection */}
-      <div className="highlight-toolbar" id="highlight-toolbar">
-        <button className="hl-btn" onClick={handleHighlight} title="Highlight">
-          <span style={{ color: highlightColor }}>■</span> Highlight
-        </button>
-        {dictWord && (
-          <button className="hl-btn" onClick={() => setDictWord(dictWord)}>
-            📖 Define
-          </button>
-        )}
-      </div>
+      {/* Highlight button — shown after text selection */}
+      <button className="float-hl-btn" onClick={handleHighlight} onTouchEnd={e => { e.stopPropagation(); handleHighlight() }}>
+        <span style={{ color: highlightColor }}>■</span> Highlight
+      </button>
 
-      {/* Dictionary popup */}
       {dictWord && (
-        <Dictionary
-          word={dictWord}
-          position={dictPos}
-          onClose={() => setDictWord(null)}
-          nightMode={nightMode}
-        />
+        <Dictionary word={dictWord} position={dictPos} onClose={() => setDictWord(null)} nightMode={nightMode} />
       )}
 
-      {/* Highlights panel */}
       {showHighlightPanel && (
         <div className={`highlights-panel ${nightMode ? 'night' : ''}`} onClick={e => e.stopPropagation()}>
           <div className="panel-header">
             <h3>My Highlights</h3>
             <button onClick={() => setShowHighlightPanel(false)}>×</button>
           </div>
-          {highlights.length === 0 && (
-            <p className="panel-empty">No highlights yet. Select text and press Highlight.</p>
-          )}
+          {highlights.length === 0 && <p className="panel-empty">No highlights yet. Select text then tap Highlight.</p>}
           {highlights.map(hl => (
             <div key={hl.id} className="highlight-item" style={{ borderLeft: `4px solid ${hl.color}` }}>
               <p className="highlight-text">"{hl.text}"</p>
               <div className="highlight-meta">
-                <span>Page {hl.pageIndex + 1}</span>
                 <button className="hl-remove" onClick={() => removeHighlight(hl.id)}>Remove</button>
               </div>
             </div>
@@ -315,7 +300,6 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
         </div>
       )}
 
-      {/* Recommendations panel */}
       {showRecs && (
         <div className={`recs-panel ${nightMode ? 'night' : ''}`} onClick={e => e.stopPropagation()}>
           <div className="panel-header">
