@@ -1,62 +1,28 @@
 const GUTENDEX = 'https://gutendex.com'
 const DICT_API = 'https://api.dictionaryapi.dev/api/v2/entries/en'
 
-// Promise.race timeout — works on all Android WebView versions
-function timedFetch(url, ms = 12000) {
-  const timer = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('timeout')), ms)
-  )
-  return Promise.race([fetch(url), timer])
-}
-
-// Try a URL through multiple CORS proxies
-async function fetchViaProxy(url) {
-  const proxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    `https://thingproxy.freeboard.io/fetch/${url}`,
-  ]
-  let lastErr
-  for (const proxy of proxies) {
-    try {
-      const res = await timedFetch(proxy, 14000)
-      if (res.ok) return res
-      lastErr = new Error(`Proxy returned ${res.status}`)
-    } catch (e) {
-      lastErr = e
-    }
-  }
-  throw lastErr || new Error('All proxies failed')
-}
-
-// Direct first, then proxy fallback
-async function smartFetch(url) {
-  try {
-    const res = await timedFetch(url, 8000)
-    if (res.ok) return res
-  } catch {
-    // CORS / network error — fall through to proxy
-  }
-  return fetchViaProxy(url)
+// Promise.race timeout — avoids AbortController which is unreliable on older WebViews
+function timedFetch(url, ms = 15000) {
+  return Promise.race([
+    fetch(url),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ])
 }
 
 export async function searchBooks(query, page = 1) {
   const url = query
     ? `${GUTENDEX}/books/?search=${encodeURIComponent(query)}&page=${page}`
     : `${GUTENDEX}/books/?sort=popular&page=${page}`
-  const res = await smartFetch(url)
-  return res.json()
-}
-
-export async function getBook(id) {
-  const res = await smartFetch(`${GUTENDEX}/books/${id}`)
+  const res = await timedFetch(url)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
 
 export async function fetchBooksBySubject(subject, page = 1) {
-  const res = await smartFetch(
+  const res = await timedFetch(
     `${GUTENDEX}/books/?topic=${encodeURIComponent(subject)}&sort=popular&page=${page}`
   )
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
 
@@ -70,7 +36,8 @@ export async function fetchBookText(book) {
 
   if (!textUrl) throw new Error('No plain text available for this book')
 
-  const res = await smartFetch(textUrl)
+  const res = await timedFetch(textUrl, 30000)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const text = await res.text()
   return cleanGutenbergText(text)
 }
@@ -112,7 +79,8 @@ function cleanGutenbergText(text) {
 export async function lookupWord(word) {
   const clean = word.toLowerCase().replace(/[^a-z'-]/g, '')
   if (!clean) throw new Error('Invalid word')
-  const res = await smartFetch(`${DICT_API}/${encodeURIComponent(clean)}`)
+  const res = await timedFetch(`${DICT_API}/${encodeURIComponent(clean)}`)
+  if (!res.ok) throw new Error('Word not found')
   return res.json()
 }
 
