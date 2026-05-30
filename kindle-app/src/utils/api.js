@@ -1,23 +1,46 @@
 const GUTENDEX = 'https://gutendex.com'
 const DICT_API = 'https://api.dictionaryapi.dev/api/v2/entries/en'
 
+// Try multiple CORS proxies in order, with timeout on each
+async function fetchWithProxy(url) {
+  const proxies = [
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    `https://corsproxy.org/?${encodeURIComponent(url)}`,
+  ]
+  let lastErr
+  for (const proxy of proxies) {
+    try {
+      const res = await fetch(proxy, { signal: AbortSignal.timeout(12000) })
+      if (res.ok) return res
+      lastErr = new Error(`HTTP ${res.status}`)
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  throw lastErr || new Error('All proxies failed')
+}
+
 export async function searchBooks(query, page = 1) {
   const url = query
     ? `${GUTENDEX}/books/?search=${encodeURIComponent(query)}&page=${page}`
     : `${GUTENDEX}/books/?sort=popular&page=${page}`
-  const res = await fetch(url)
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
   if (!res.ok) throw new Error('Failed to fetch books')
   return res.json()
 }
 
 export async function getBook(id) {
-  const res = await fetch(`${GUTENDEX}/books/${id}`)
+  const res = await fetch(`${GUTENDEX}/books/${id}`, { signal: AbortSignal.timeout(10000) })
   if (!res.ok) throw new Error('Failed to fetch book')
   return res.json()
 }
 
 export async function fetchBooksBySubject(subject, page = 1) {
-  const res = await fetch(`${GUTENDEX}/books/?topic=${encodeURIComponent(subject)}&sort=popular&page=${page}`)
+  const res = await fetch(
+    `${GUTENDEX}/books/?topic=${encodeURIComponent(subject)}&sort=popular&page=${page}`,
+    { signal: AbortSignal.timeout(10000) }
+  )
   if (!res.ok) throw new Error('Failed to fetch books by subject')
   return res.json()
 }
@@ -32,15 +55,23 @@ export async function fetchBookText(book) {
 
   if (!textUrl) throw new Error('No plain text available for this book')
 
-  const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(textUrl)}`
-  const res = await fetch(proxyUrl)
-  if (!res.ok) throw new Error('Failed to fetch book text')
+  // Try direct fetch first (works in Capacitor native webview in some configs)
+  try {
+    const direct = await fetch(textUrl, { signal: AbortSignal.timeout(8000) })
+    if (direct.ok) {
+      const text = await direct.text()
+      return cleanGutenbergText(text)
+    }
+  } catch {
+    // CORS blocked or timeout — fall through to proxies
+  }
+
+  const res = await fetchWithProxy(textUrl)
   const text = await res.text()
   return cleanGutenbergText(text)
 }
 
 function cleanGutenbergText(text) {
-  // Remove Gutenberg header/footer boilerplate
   const startMarkers = [
     /\*\*\* START OF (THE|THIS) PROJECT GUTENBERG/i,
     /\*\*\*START OF (THE|THIS) PROJECT GUTENBERG/i,
@@ -77,7 +108,9 @@ function cleanGutenbergText(text) {
 export async function lookupWord(word) {
   const clean = word.toLowerCase().replace(/[^a-z'-]/g, '')
   if (!clean) throw new Error('Invalid word')
-  const res = await fetch(`${DICT_API}/${encodeURIComponent(clean)}`)
+  const res = await fetch(`${DICT_API}/${encodeURIComponent(clean)}`, {
+    signal: AbortSignal.timeout(8000),
+  })
   if (!res.ok) throw new Error('Word not found')
   return res.json()
 }
@@ -95,7 +128,6 @@ export function getBookGenres(book) {
   return book.subjects?.slice(0, 3) || []
 }
 
-// Generate a deterministic color palette for a book based on its ID
 export function getBookColors(id) {
   const palettes = [
     { spine: '#8B2635', page: '#F5E6D3', text: '#2C1810' },

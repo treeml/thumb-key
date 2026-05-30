@@ -3,19 +3,21 @@ import { searchBooks, fetchBooksBySubject } from '../utils/api'
 import BookCard from './BookCard'
 
 const CATEGORIES = [
-  { label: 'Popular', key: 'popular', query: null },
-  { label: 'Adventure', key: 'adventure', query: 'adventure' },
-  { label: 'Mystery', key: 'mystery', query: 'detective' },
-  { label: 'Romance', key: 'romance', query: 'romance' },
-  { label: 'Sci-Fi', key: 'scifi', query: 'science fiction' },
+  { label: 'Popular',    key: 'popular',    query: null },
+  { label: 'Adventure',  key: 'adventure',  query: 'adventure' },
+  { label: 'Mystery',    key: 'mystery',    query: 'detective' },
+  { label: 'Romance',    key: 'romance',    query: 'romance' },
+  { label: 'Sci-Fi',     key: 'scifi',      query: 'science fiction' },
   { label: 'Philosophy', key: 'philosophy', query: 'philosophy' },
-  { label: 'History', key: 'history', query: 'history' },
-  { label: 'Poetry', key: 'poetry', query: 'poetry' },
+  { label: 'History',    key: 'history',    query: 'history' },
+  { label: 'Poetry',     key: 'poetry',     query: 'poetry' },
 ]
+
+// Module-level cache — survives component unmount/remount
+const sectionCache = {}
 
 function ShelfRow({ title, books, onSelect, getProgress, loading }) {
   const rowRef = useRef(null)
-
   const scroll = (dir) => {
     if (rowRef.current) rowRef.current.scrollBy({ left: dir * 260, behavior: 'smooth' })
   }
@@ -48,17 +50,32 @@ function ShelfRow({ title, books, onSelect, getProgress, loading }) {
 }
 
 export default function Bookshelf({ onSelectBook, getProgress, myLibrary, searchQuery }) {
-  const [sections, setSections] = useState({})
+  const [sections, setSections] = useState(() => ({ ...sectionCache }))
   const [loading, setLoading] = useState({})
 
   useEffect(() => {
-    CATEGORIES.forEach(cat => {
-      setLoading(p => ({ ...p, [cat.key]: true }))
-      const fetcher = cat.query ? fetchBooksBySubject(cat.query) : searchBooks(null, 1)
-      fetcher
-        .then(data => setSections(p => ({ ...p, [cat.key]: data.results || [] })))
-        .catch(() => setSections(p => ({ ...p, [cat.key]: [] })))
-        .finally(() => setLoading(p => ({ ...p, [cat.key]: false })))
+    // Load Popular immediately, then stagger the rest to avoid hammering the API
+    CATEGORIES.forEach((cat, i) => {
+      if (sectionCache[cat.key]) return  // already cached, skip fetch
+
+      const delay = i * 300  // 0ms, 300ms, 600ms … staggered
+      const timer = setTimeout(() => {
+        setLoading(p => ({ ...p, [cat.key]: true }))
+        const fetcher = cat.query ? fetchBooksBySubject(cat.query) : searchBooks(null, 1)
+        fetcher
+          .then(data => {
+            const results = data.results || []
+            sectionCache[cat.key] = results
+            setSections(p => ({ ...p, [cat.key]: results }))
+          })
+          .catch(() => {
+            sectionCache[cat.key] = []
+            setSections(p => ({ ...p, [cat.key]: [] }))
+          })
+          .finally(() => setLoading(p => ({ ...p, [cat.key]: false })))
+      }, delay)
+
+      return () => clearTimeout(timer)
     })
   }, [])
 
@@ -117,7 +134,7 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, search
           books={sections[cat.key] || []}
           onSelect={onSelectBook}
           getProgress={getProgress}
-          loading={loading[cat.key]}
+          loading={loading[cat.key] ?? !sectionCache[cat.key]}
         />
       ))}
     </div>

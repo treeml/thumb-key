@@ -88,14 +88,15 @@ export default function App() {
       )}
 
       <main className="app-main">
-        {view === 'shelf' && (
+        {/* Keep mounted so fetched books aren't lost on navigation */}
+        <div style={{ display: view === 'shelf' ? 'block' : 'none' }}>
           <Bookshelf
             onSelectBook={handleSelectBook}
             getProgress={getProgress}
             myLibrary={myLibrary}
             searchQuery={searchQuery}
           />
-        )}
+        </div>
         {view === 'detail' && selectedBook && (
           <BookDetail
             book={selectedBook}
