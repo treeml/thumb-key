@@ -18,41 +18,61 @@ function xhrGet(url) {
   })
 }
 
+// Force HTTPS and normalise Gutenberg URLs
+function normaliseUrl(url) {
+  return url.replace(/^http:\/\//i, 'https://')
+}
+
+// Build fallback Gutenberg text URLs from a book ID
+function gutenbergFallbackUrls(bookId) {
+  const id = String(bookId)
+  return [
+    `https://gutenberg.org/cache/epub/${id}/pg${id}.txt`,
+    `https://www.gutenberg.org/files/${id}/${id}-0.txt`,
+    `https://www.gutenberg.org/files/${id}/${id}.txt`,
+  ]
+}
+
+async function capGet(url) {
+  const res = await CapacitorHttp.get({
+    url,
+    headers: { 'User-Agent': 'Tome-App/1.0' },
+  })
+  if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`)
+  return res.data
+}
+
 async function getJson(url) {
   if (Capacitor.isNativePlatform()) {
-    // Try CapacitorHttp first (native Android HTTP, no CORS)
     try {
-      const res = await CapacitorHttp.get({ url })
-      if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`)
-      return typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+      const data = await capGet(normaliseUrl(url))
+      return typeof data === 'string' ? JSON.parse(data) : data
     } catch (capErr) {
-      // Fall back to XHR
       try {
-        const text = await xhrGet(url)
+        const text = await xhrGet(normaliseUrl(url))
         return JSON.parse(text)
       } catch (xhrErr) {
-        // Throw combined error for diagnostics
-        const capMsg = capErr?.message || JSON.stringify(capErr) || 'no-msg'
-        const xhrMsg = xhrErr?.message || 'no-msg'
-        throw new Error(`cap: ${capMsg} | xhr: ${xhrMsg}`)
+        throw new Error(`cap: ${capErr?.message || capErr} | xhr: ${xhrErr?.message || xhrErr}`)
       }
     }
   }
-  // Web fallback
   const res = await fetch(url)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
 
 async function getText(url) {
+  const urls = [normaliseUrl(url)]
   if (Capacitor.isNativePlatform()) {
-    try {
-      const res = await CapacitorHttp.get({ url })
-      if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`)
-      return typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
-    } catch {
-      return xhrGet(url)
+    for (const u of urls) {
+      try {
+        const data = await capGet(u)
+        return typeof data === 'string' ? data : JSON.stringify(data)
+      } catch { /* try next */ }
     }
+    // CapacitorHttp failed — try XHR
+    try { return await xhrGet(normaliseUrl(url)) } catch { /* fall through */ }
+    throw new Error('Could not load book text — all methods failed')
   }
   const res = await fetch(url)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -72,14 +92,26 @@ export async function fetchBooksBySubject(subject, page = 1) {
 
 export async function fetchBookText(book) {
   const formats = book.formats || {}
-  const textUrl =
+  const apiUrl =
     formats['text/plain; charset=utf-8'] ||
     formats['text/plain; charset=us-ascii'] ||
     formats['text/plain'] ||
     Object.entries(formats).find(([k]) => k.startsWith('text/plain'))?.[1]
-  if (!textUrl) throw new Error('No plain text available')
-  const text = await getText(textUrl)
-  return cleanGutenbergText(text)
+
+  const urlsToTry = apiUrl
+    ? [apiUrl, ...gutenbergFallbackUrls(book.id)]
+    : gutenbergFallbackUrls(book.id)
+
+  let lastErr
+  for (const url of urlsToTry) {
+    try {
+      const text = await getText(url)
+      if (text && text.length > 500) return cleanGutenbergText(text)
+    } catch (e) {
+      lastErr = e
+    }
+  }
+  throw lastErr || new Error('No readable text found for this book')
 }
 
 function cleanGutenbergText(text) {
