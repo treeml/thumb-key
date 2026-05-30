@@ -551,7 +551,7 @@ input, textarea { font-family: inherit; }
   padding: 40px 52px 40px 56px;
   font-family: 'Crimson Pro', Georgia, serif;
   line-height: 1.85;
-  color: #2c1a06;
+  color: inherit;
   text-align: justify;
   hyphens: auto;
 }
@@ -565,19 +565,39 @@ input, textarea { font-family: inherit; }
   .page-layer { inset: 6px 8px; }
 }
 
-/* Fold shadow strip — vertical line that travels with the drag */
-.fold-shadow {
+/* Fold strip — travels across the page during a drag turn, simulates the physical crease */
+.fold-strip {
   position: absolute; top: 0; bottom: 0;
-  width: 36px; z-index: 10;
+  width: 0; z-index: 15;
   pointer-events: none; opacity: 0;
+  /* Left half: shadow cast on revealed page; centre: bright paper edge; right: back of curling page */
   background: linear-gradient(90deg,
-    rgba(0,0,0,0.0) 0%,
-    rgba(0,0,0,0.08) 30%,
-    rgba(255,240,200,0.5) 48%,
-    rgba(200,170,120,0.6) 52%,
-    rgba(0,0,0,0.12) 70%,
-    rgba(0,0,0,0.0) 100%
+    rgba(0,0,0,0.14)  0%,
+    rgba(0,0,0,0.05)  18%,
+    rgba(255,252,240,0.96) 36%,
+    rgba(255,255,255,1.00) 50%,
+    rgba(238,222,192,0.90) 64%,
+    rgba(200,175,135,0.75) 80%,
+    rgba(0,0,0,0.18)  100%
   );
+  box-shadow: 0 0 8px rgba(0,0,0,0.12);
+}
+
+/* Page colour swatches */
+.page-color-swatches {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.page-color-swatch {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 2px solid rgba(0,0,0,0.15);
+  font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.page-color-swatch.active {
+  border-color: #5a3a1a;
+  transform: scale(1.2);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
 /* Reader navigation */
