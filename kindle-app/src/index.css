@@ -859,3 +859,321 @@ input, textarea { font-family: inherit; }
 
 /* ===== MISC ===== */
 .btn-primary { cursor: pointer; }
+
+/* ===== LIBRARY BUILDING ENTRY (in Bookshelf) ===== */
+.lib-book-count {
+  font-size: 12px; color: var(--text-muted);
+  background: var(--surface); padding: 2px 10px;
+  border-radius: 10px; border: 1px solid var(--border);
+}
+.lib-building-entry {
+  cursor: pointer;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.2s;
+  position: relative;
+}
+.lib-building-entry:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+  border-color: var(--gold);
+}
+.lib-building-entry:active { transform: translateY(-1px); }
+.lib-building-svg { width: 100%; display: block; }
+.lib-building-cta {
+  background: linear-gradient(180deg, rgba(13,8,32,0.0) 0%, rgba(13,8,32,0.88) 100%);
+  color: var(--gold);
+  text-align: center;
+  padding: 14px 16px 12px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  margin-top: -36px;
+  position: relative;
+}
+
+/* ===== LIBRARY VIEW ===== */
+.library-view {
+  min-height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, #120a04 0%, #0a0704 100%);
+}
+
+.library-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #0d0805 0%, #120a04 100%);
+}
+
+.library-heading {
+  font-family: 'Playfair Display', serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.5px;
+}
+
+.library-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  margin-bottom: 28px;
+  letter-spacing: 0.3px;
+}
+
+.library-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 16px;
+  padding: 80px 20px;
+  text-align: center;
+}
+.library-empty-icon { font-size: 56px; margin-bottom: 12px; }
+
+/* Shelves container */
+.library-shelves-wrap {
+  flex: 1;
+  overflow-y: auto;
+  padding: 36px 16px 80px;
+}
+.library-shelves {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* One row of books + plank */
+.lib-shelf-row { position: relative; }
+.lib-shelf-books {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 20px 20px 0;
+  min-height: 210px;
+  background: linear-gradient(180deg, rgba(30,12,4,0.0) 0%, rgba(15,8,2,0.6) 100%);
+  border-radius: 4px 4px 0 0;
+}
+.lib-shelf-plank {
+  height: 18px;
+  background: linear-gradient(180deg, #9b6a28 0%, #6b4010 35%, #3e2208 100%);
+  border-radius: 0 0 3px 3px;
+  box-shadow:
+    0 6px 24px rgba(0,0,0,0.75),
+    inset 0 2px 0 rgba(255,200,80,0.18),
+    inset 0 -2px 6px rgba(0,0,0,0.4);
+  margin-bottom: 44px;
+}
+
+/* ── Individual spine book ── */
+.lib-spine-book {
+  position: relative;
+  cursor: pointer;
+  transform-origin: bottom center;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s;
+  flex-shrink: 0;
+  user-select: none;
+}
+.lib-spine-book:hover:not(.lib-spine-pulled) {
+  transform: translateY(-14px);
+  filter: drop-shadow(-4px -3px 12px rgba(0,0,0,0.65));
+  z-index: 10;
+}
+.lib-spine-pulled {
+  transform: translateY(-55px) rotateY(-10deg) !important;
+  filter: drop-shadow(-6px -5px 24px rgba(0,0,0,0.8)) !important;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* Spine face */
+.lib-spine-face {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  border-radius: 1px 2px 2px 1px;
+  overflow: hidden;
+  box-shadow:
+    inset -2px 0 8px rgba(0,0,0,0.4),
+    inset 1px 0 3px rgba(255,255,255,0.07);
+}
+
+/* Divider line between read/unread portion */
+.lib-spine-divider {
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  background: rgba(255,255,255,0.35);
+  pointer-events: none;
+}
+
+/* Title — vertical text */
+.lib-spine-title-wrap {
+  position: absolute;
+  inset: 8px 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.lib-spine-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 8.5px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.88);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  line-height: 1.15;
+  max-height: 100%;
+  word-break: break-word;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* Completion check */
+.lib-spine-check {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: rgba(255,255,255,0.9);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+
+/* 3D illusion — top cap and right side */
+.lib-spine-top {
+  position: absolute;
+  top: -5px; left: 1px; right: 1px;
+  height: 6px;
+  transform: perspective(200px) rotateX(40deg);
+  transform-origin: bottom;
+  border-radius: 1px 1px 0 0;
+  opacity: 0.7;
+}
+.lib-spine-right {
+  position: absolute;
+  top: 0; right: -4px; bottom: 0;
+  width: 5px;
+  transform: perspective(200px) rotateY(-40deg);
+  transform-origin: left;
+  border-radius: 0 1px 1px 0;
+  opacity: 0.55;
+}
+
+/* ── Book open overlay ── */
+.lib-open-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 2, 15, 0.82);
+  backdrop-filter: blur(4px);
+  animation: libOverlayIn 0.25s ease forwards;
+}
+@keyframes libOverlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.lib-open-stage {
+  position: relative;
+  width: 240px;
+  height: 340px;
+  perspective: 1400px;
+  transform-style: preserve-3d;
+  animation: libStageIn 0.45s cubic-bezier(0.22,1,0.36,1) forwards;
+}
+@keyframes libStageIn {
+  from { transform: scale(0.55) translateY(60px); opacity: 0; }
+  to   { transform: scale(1)    translateY(0);    opacity: 1; }
+}
+
+/* Back layer: open page (revealed as cover swings open) */
+.lib-open-page {
+  position: absolute;
+  inset: 0;
+  background: #fdf6e3;
+  border-radius: 2px 10px 10px 2px;
+  box-shadow: 4px 8px 40px rgba(0,0,0,0.6);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.lib-open-page-lines {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.lib-open-line {
+  height: 2px;
+  background: #3a2010;
+  border-radius: 1px;
+}
+.lib-open-page-caption {
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-size: 15px;
+  color: #7a5030;
+  text-align: center;
+  line-height: 1.5;
+  animation: libCaptionIn 0.4s 0.75s ease forwards;
+  opacity: 0;
+}
+@keyframes libCaptionIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Front layer: book cover — swings open */
+.lib-open-cover {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px 10px 10px 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  gap: 10px;
+  box-shadow: -6px 10px 40px rgba(0,0,0,0.7);
+  transform-origin: left center;
+  animation: libCoverSwing 0.65s 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  backface-visibility: hidden;
+}
+@keyframes libCoverSwing {
+  from { transform: perspective(1400px) rotateY(0deg); }
+  to   { transform: perspective(1400px) rotateY(-145deg); }
+}
+.lib-open-cover-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.92);
+  text-align: center;
+  line-height: 1.3;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.45);
+}
+.lib-open-cover-author {
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+  text-align: center;
+}

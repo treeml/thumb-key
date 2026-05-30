@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react'
 import Bookshelf from './components/Bookshelf'
 import BookDetail from './components/BookDetail'
 import Reader from './components/Reader'
+import Library from './components/Library'
 import { useLibrary } from './hooks/useLibrary'
 
 export default function App() {
@@ -43,6 +44,8 @@ export default function App() {
     }
   }, [])
 
+  const handleOpenLibrary = useCallback(() => { setView('library') }, [])
+
   const handleSearch = (e) => {
     e.preventDefault()
     setSearchQuery(searchInput)
@@ -76,6 +79,10 @@ export default function App() {
                 onClick={() => { setView('shelf'); setSearchQuery(''); setSearchInput('') }}
               >Browse</button>
               <button
+                className={`library-tab ${view === 'library' ? 'active' : ''}`}
+                onClick={handleOpenLibrary}
+              >Library</button>
+              <button
                 className="night-toggle"
                 onClick={() => setNightMode(n => !n)}
                 title={nightMode ? 'Day mode' : 'Night mode'}
@@ -95,6 +102,7 @@ export default function App() {
             getProgress={getProgress}
             myLibrary={myLibrary}
             searchQuery={searchQuery}
+            onOpenLibrary={handleOpenLibrary}
           />
         </div>
         {view === 'detail' && selectedBook && (
@@ -117,6 +125,15 @@ export default function App() {
             setProgress={setProgress}
             initialProgress={getProgress(selectedBook.id)}
             onBack={handleBackFromReader}
+          />
+        )}
+        {view === 'library' && (
+          <Library
+            myLibrary={myLibrary}
+            getProgress={getProgress}
+            onBack={() => setView('shelf')}
+            onRead={handleRead}
+            nightMode={nightMode}
           />
         )}
       </main>
