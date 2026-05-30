@@ -2,3 +2,9 @@ node_modules/
 dist/
 .env
 *.local
+
+# Android build outputs only (keep source)
+android/app/build/
+android/.gradle/
+android/build/
+android/local.properties

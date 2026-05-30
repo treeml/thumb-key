@@ -1,0 +1,57 @@
+name: Build Tome APK
+
+on:
+  push:
+    branches: [claude/kindle-free-books-app-FXcYh, main]
+    paths: ['kindle-app/**']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: kindle-app/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install dependencies
+        working-directory: kindle-app
+        run: npm ci
+
+      - name: Build web app
+        working-directory: kindle-app
+        run: npm run build
+
+      - name: Sync Capacitor
+        working-directory: kindle-app
+        run: npx cap sync android
+
+      - name: Make Gradle executable
+        working-directory: kindle-app/android
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        working-directory: kindle-app/android
+        run: ./gradlew assembleDebug --no-daemon
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tome-debug.apk
+          path: kindle-app/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
