@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { searchBooks, fetchBooksBySubject } from '../utils/api'
 import BookCard from './BookCard'
 
@@ -37,7 +38,9 @@ function ShelfRow({ title, books, onSelect, getProgress, loading, error, onRetry
           : error
           ? (
             <div className="shelf-error">
-              <span>Failed to load</span>
+              <div>
+                <div style={{fontSize:11,color:'#e07b39',marginBottom:4}}>Error: {error}</div>
+              </div>
               <button className="retry-btn" onClick={onRetry}>Retry</button>
             </div>
           )
@@ -77,8 +80,8 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, search
         setSections(p => ({ ...p, [cat.key]: results }))
         setErrors(p => ({ ...p, [cat.key]: false }))
       })
-      .catch(() => {
-        setErrors(p => ({ ...p, [cat.key]: true }))
+      .catch((e) => {
+        setErrors(p => ({ ...p, [cat.key]: (e && e.message) ? e.message : String(e) }))
       })
       .finally(() => setLoading(p => ({ ...p, [cat.key]: false })))
   }, [])
@@ -133,6 +136,9 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, search
 
   return (
     <div className="bookshelf-container">
+      <div style={{fontSize:10,color:'#6a5030',padding:'4px 0 8px',fontFamily:'monospace'}}>
+        v6 · platform: {Capacitor.getPlatform()} · native: {String(Capacitor.isNativePlatform())}
+      </div>
       {myLibrary.length > 0 && (
         <div className="shelf-row my-library-row">
           <div className="shelf-row-header">
