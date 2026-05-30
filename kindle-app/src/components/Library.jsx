@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 
 const SPINE_PALETTES = [
   { base: '#8B2635', read: '#d4736b' },
@@ -19,7 +19,7 @@ function bookPalette(id) { return SPINE_PALETTES[Number(id) % SPINE_PALETTES.len
 function bookH(id)  { return 130 + (Number(id) * 17 + 13) % 65 }
 function bookW(id)  { return 24  + (Number(id) * 7  +  5) % 16 }
 
-function SpineBook({ book, progress, onTap, isPulled }) {
+function SpineBook({ book, progress, onTap, isActive }) {
   const pal = bookPalette(book.id)
   const h   = bookH(book.id)
   const w   = bookW(book.id)
@@ -31,9 +31,9 @@ function SpineBook({ book, progress, onTap, isPulled }) {
 
   return (
     <div
-      className={`lib-spine-book${isPulled ? ' lib-spine-pulled' : ''}`}
+      className={`lib-spine-book${isActive ? ' lib-spine-active' : ''}`}
       style={{ height: h, width: w }}
-      onClick={() => !isPulled && onTap(book)}
+      onClick={() => onTap(book)}
       role="button"
       aria-label={book.title}
     >
@@ -46,15 +46,70 @@ function SpineBook({ book, progress, onTap, isPulled }) {
         </div>
         {pct === 100 && <div className="lib-spine-check">✓</div>}
       </div>
-      <div className="lib-spine-top"    style={{ background: `${pal.base}dd` }} />
-      <div className="lib-spine-right"  style={{ background: `${pal.base}88` }} />
+      <div className="lib-spine-top"   style={{ background: `${pal.base}dd` }} />
+      <div className="lib-spine-right" style={{ background: `${pal.base}88` }} />
+    </div>
+  )
+}
+
+function BookHoverCard({ book, progress, onOpen, onPutBack }) {
+  const pal      = bookPalette(book.id)
+  const pct      = Math.round((progress || 0) * 100)
+  const coverUrl = book.formats?.['image/jpeg']
+  const authors  = book.authors?.map(a => a.name).join(', ') || ''
+  const t0       = useRef(null)
+
+  const onTouchStart = (e) => { t0.current = e.touches[0].clientY }
+  const onTouchEnd   = (e) => {
+    if (t0.current !== null) {
+      const dy = t0.current - e.changedTouches[0].clientY
+      if (dy > 40) { onPutBack(); t0.current = null; return }
+      t0.current = null
+    }
+  }
+
+  return (
+    <div className="lib-hover-backdrop" onClick={onPutBack}>
+      <div
+        className="lib-hover-card"
+        onClick={e => { e.stopPropagation(); onOpen() }}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
+        {/* Book with spine + cover */}
+        <div className="lib-hover-book3d">
+          <div className="lib-hover-spine" style={{ background: pal.base }} />
+          <div className="lib-hover-cover" style={{ background: pal.base }}>
+            {coverUrl ? (
+              <img src={coverUrl} alt={book.title} className="lib-hover-cover-img" />
+            ) : (
+              <div className="lib-hover-placeholder">
+                <div className="lib-hover-ph-title">{book.title}</div>
+                {authors && <div className="lib-hover-ph-author">{authors}</div>}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="lib-hover-meta">
+          <div className="lib-hover-book-title">{book.title}</div>
+          {authors && <div className="lib-hover-book-author">{authors}</div>}
+          {pct > 0 && <div className="lib-hover-pct">{pct}% read</div>}
+        </div>
+
+        <div className="lib-hover-hints">
+          <span className="lib-hover-hint-open">Tap to open</span>
+          <span className="lib-hover-hint-sep"> · </span>
+          <span className="lib-hover-hint-back">swipe up to shelve</span>
+        </div>
+      </div>
     </div>
   )
 }
 
 function BookOpenOverlay({ book, progress }) {
-  const pal = bookPalette(book.id)
-  const pct = Math.round((progress || 0) * 100)
+  const pal     = bookPalette(book.id)
+  const pct     = Math.round((progress || 0) * 100)
   const authors = book.authors?.map(a => a.name).join(', ') || ''
 
   return (
@@ -63,7 +118,8 @@ function BookOpenOverlay({ book, progress }) {
         <div className="lib-open-page">
           <div className="lib-open-page-lines">
             {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="lib-open-line" style={{ width: `${60 + (i % 3) * 15}%`, opacity: 0.18 + (i % 4) * 0.05 }} />
+              <div key={i} className="lib-open-line"
+                style={{ width: `${60 + (i % 3) * 15}%`, opacity: 0.18 + (i % 4) * 0.05 }} />
             ))}
           </div>
           <div className="lib-open-page-caption">
@@ -80,17 +136,23 @@ function BookOpenOverlay({ book, progress }) {
 }
 
 export default function Library({ myLibrary, getProgress, onBack, onRead, nightMode }) {
-  const [phase, setPhase]       = useState('shelf')
+  const [phase, setPhase]         = useState('shelf')
   const [activeBook, setActiveBook] = useState(null)
 
   const handleTapBook = useCallback((book) => {
     setActiveBook(book)
-    setPhase('pulling')
-    setTimeout(() => {
-      setPhase('opening')
-      setTimeout(() => { onRead(book) }, 1100)
-    }, 650)
-  }, [onRead])
+    setPhase('hovering')
+  }, [])
+
+  const handleOpen = useCallback(() => {
+    setPhase('opening')
+    setTimeout(() => { onRead(activeBook) }, 1100)
+  }, [activeBook, onRead])
+
+  const handlePutBack = useCallback(() => {
+    setPhase('shelf')
+    setActiveBook(null)
+  }, [])
 
   const ROW_SIZE = 9
   const rows = []
@@ -100,8 +162,19 @@ export default function Library({ myLibrary, getProgress, onBack, onRead, nightM
 
   return (
     <div className={`library-view${nightMode ? ' night' : ''}`}>
-      {(phase === 'pulling' || phase === 'opening') && activeBook && (
-        <BookOpenOverlay book={activeBook} progress={getProgress(activeBook.id)} />
+      {phase === 'hovering' && activeBook && (
+        <BookHoverCard
+          book={activeBook}
+          progress={getProgress(activeBook.id)}
+          onOpen={handleOpen}
+          onPutBack={handlePutBack}
+        />
+      )}
+      {phase === 'opening' && activeBook && (
+        <BookOpenOverlay
+          book={activeBook}
+          progress={getProgress(activeBook.id)}
+        />
       )}
 
       <div className="library-topbar">
@@ -121,7 +194,7 @@ export default function Library({ myLibrary, getProgress, onBack, onRead, nightM
       ) : (
         <div className="library-shelves-wrap">
           <div className="library-shelves">
-            <p className="library-hint">Tap a book to open it</p>
+            <p className="library-hint">Tap a book to preview it</p>
             {rows.map((rowBooks, ri) => (
               <div key={ri} className="lib-shelf-row">
                 <div className="lib-shelf-books">
@@ -131,7 +204,7 @@ export default function Library({ myLibrary, getProgress, onBack, onRead, nightM
                       book={book}
                       progress={getProgress(book.id)}
                       onTap={handleTapBook}
-                      isPulled={activeBook?.id === book.id && phase !== 'shelf'}
+                      isActive={activeBook?.id === book.id && phase !== 'shelf'}
                     />
                   ))}
                 </div>

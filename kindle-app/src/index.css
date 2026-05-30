@@ -982,16 +982,17 @@ input, textarea { font-family: inherit; }
   flex-shrink: 0;
   user-select: none;
 }
-.lib-spine-book:hover:not(.lib-spine-pulled) {
+.lib-spine-book:hover:not(.lib-spine-active) {
   transform: translateY(-14px);
   filter: drop-shadow(-4px -3px 12px rgba(0,0,0,0.65));
   z-index: 10;
 }
-.lib-spine-pulled {
-  transform: translateY(-55px) rotateY(-10deg) !important;
-  filter: drop-shadow(-6px -5px 24px rgba(0,0,0,0.8)) !important;
+/* Active = pulled out (card is showing) */
+.lib-spine-active {
+  transform: translateY(-28px) scale(1.04) !important;
+  filter: drop-shadow(0 -6px 18px rgba(201,168,76,0.35)) drop-shadow(-4px -4px 12px rgba(0,0,0,0.6)) !important;
   z-index: 20;
-  pointer-events: none;
+  opacity: 0.8;
 }
 
 /* Spine face */
@@ -1072,6 +1073,115 @@ input, textarea { font-family: inherit; }
   border-radius: 0 1px 1px 0;
   opacity: 0.55;
 }
+
+/* ── Hover card — first-tap preview ── */
+.lib-hover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: rgba(5, 2, 15, 0.76);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: libOverlayIn 0.2s ease;
+}
+
+.lib-hover-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 24px 20px 20px;
+  max-width: 300px;
+  width: 100%;
+  cursor: pointer;
+  animation: libHoverCardIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes libHoverCardIn {
+  from { transform: translateY(50px) scale(0.78); opacity: 0; }
+  to   { transform: translateY(0)    scale(1);    opacity: 1; }
+}
+
+.lib-hover-book3d {
+  display: flex;
+  align-items: stretch;
+  border-radius: 2px 10px 10px 2px;
+  box-shadow: -10px 14px 50px rgba(0,0,0,0.78), 4px 6px 20px rgba(0,0,0,0.4);
+  transform: perspective(900px) rotateY(-8deg);
+  transition: transform 0.3s;
+}
+.lib-hover-card:hover .lib-hover-book3d {
+  transform: perspective(900px) rotateY(-13deg);
+}
+
+.lib-hover-spine {
+  width: 20px;
+  flex-shrink: 0;
+  border-radius: 2px 0 0 2px;
+  box-shadow: inset -3px 0 10px rgba(0,0,0,0.45);
+}
+.lib-hover-cover {
+  width: 165px;
+  height: 232px;
+  border-radius: 0 10px 10px 0;
+  overflow: hidden;
+  position: relative;
+}
+.lib-hover-cover-img {
+  width: 100%; height: 100%;
+  object-fit: cover; display: block;
+}
+.lib-hover-placeholder {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 20px; gap: 12px;
+}
+.lib-hover-ph-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 16px; font-weight: 700;
+  color: rgba(255,255,255,0.92);
+  text-align: center; line-height: 1.3;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.45);
+}
+.lib-hover-ph-author {
+  font-size: 11px;
+  color: rgba(255,255,255,0.62);
+  text-align: center;
+}
+
+.lib-hover-meta {
+  text-align: center;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 4px;
+}
+.lib-hover-book-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 18px; font-weight: 700;
+  color: #f0e4c8;
+  line-height: 1.3;
+  max-width: 260px;
+}
+.lib-hover-book-author { font-size: 13px; color: #b8956a; }
+.lib-hover-pct {
+  font-size: 12px; font-weight: 600; color: #c9a84c;
+  background: rgba(201,168,76,0.14);
+  padding: 2px 12px; border-radius: 10px;
+  border: 1px solid rgba(201,168,76,0.28);
+  margin-top: 2px;
+}
+
+.lib-hover-hints {
+  font-size: 12px;
+  color: #5a4535;
+}
+.lib-hover-hint-open {
+  font-weight: 600;
+  color: #c9a84c;
+}
+.lib-hover-hint-sep { color: #3a2820; }
+.lib-hover-hint-back { color: #5a4535; }
 
 /* ── Book open overlay ── */
 .lib-open-overlay {
