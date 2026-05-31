@@ -11,6 +11,7 @@ export default function App() {
   const [nightMode, setNightMode] = useState(() => localStorage.getItem('tome_night') === 'true')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchInput, setSearchInput] = useState('')
+  const [browseSignal, setBrowseSignal] = useState(0)
 
   const { books: myLibrary, addBook, removeBook, hasBook, setProgress, getProgress } = useLibrary()
 
@@ -76,7 +77,7 @@ export default function App() {
             <div className="header-actions">
               <button
                 className={`library-tab ${view === 'shelf' ? 'active' : ''}`}
-                onClick={() => { setView('shelf'); setSearchQuery(''); setSearchInput('') }}
+                onClick={() => { setView('shelf'); setSearchQuery(''); setSearchInput(''); setBrowseSignal(s => s + 1) }}
               >Browse</button>
               <button
                 className={`library-tab ${view === 'library' ? 'active' : ''}`}
@@ -103,6 +104,9 @@ export default function App() {
             myLibrary={myLibrary}
             searchQuery={searchQuery}
             onOpenLibrary={handleOpenLibrary}
+            addBook={addBook}
+            hasBook={hasBook}
+            browseSignal={browseSignal}
           />
         </div>
         {view === 'detail' && selectedBook && (

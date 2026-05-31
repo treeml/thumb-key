@@ -74,8 +74,8 @@ export default function BookDetail({ book, onRead, onBack, onSelectBook, hasBook
         <h2 className="section-title">About this Book</h2>
         <p className="detail-description">
           {subjects.length > 0
-            ? `A classic work covering themes of ${subjects.slice(0,3).map(s=>s.split(' -- ')[0].trim().toLowerCase()).join(', ')}. Originally published and now freely available through Project Gutenberg.`
-            : 'A classic work freely available through Project Gutenberg, the world\'s oldest digital library.'
+            ? `A work covering themes of ${subjects.slice(0,3).map(s=>s.split(' -- ')[0].trim().toLowerCase()).join(', ')}. Freely available through ${book.source === 'openlibrary' ? 'Open Library / Internet Archive' : 'Project Gutenberg'}.`
+            : `Freely available through ${book.source === 'openlibrary' ? 'Open Library / Internet Archive' : 'Project Gutenberg, the world\'s oldest digital library'}.`
           }
         </p>
       </div>

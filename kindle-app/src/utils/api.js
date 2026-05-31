@@ -1,7 +1,9 @@
 import { CapacitorHttp, Capacitor } from '@capacitor/core'
 
-const GUTENDEX = 'https://gutendex.com'
-const DICT_API = 'https://api.dictionaryapi.dev/api/v2/entries/en'
+const GUTENDEX        = 'https://gutendex.com'
+const DICT_API        = 'https://api.dictionaryapi.dev/api/v2/entries/en'
+const OPEN_LIBRARY    = 'https://openlibrary.org'
+const INTERNET_ARCHIVE = 'https://archive.org'
 
 function xhrGet(url) {
   return new Promise((resolve, reject) => {
@@ -79,11 +81,70 @@ async function getText(url) {
   return res.text()
 }
 
+// Hash any ID (string or number) to a stable non-negative integer
+export function hashId(id) {
+  const s = String(id)
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0
+  return Math.abs(h)
+}
+
+function normalizeOpenLibraryBook(doc) {
+  const iaId    = Array.isArray(doc.ia) ? doc.ia[0] : (doc.ia || null)
+  const coverId = doc.cover_i || null
+  const workKey = doc.key?.replace('/works/', '') || `olbook${Date.now()}`
+  return {
+    id:            `ol_${workKey}`,
+    title:         doc.title || 'Unknown Title',
+    authors:       (doc.author_name || []).map(name => ({ name })),
+    formats: {
+      ...(coverId && { 'image/jpeg':   `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` }),
+      ...(iaId    && { 'text/plain':   `${INTERNET_ARCHIVE}/download/${iaId}/${iaId}.txt` }),
+    },
+    subjects:      (doc.subject || []).slice(0, 5),
+    languages:     doc.language || [],
+    download_count: doc.readinglog_count || 0,
+    source:        'openlibrary',
+    ia:            iaId,
+  }
+}
+
 export async function searchBooks(query, page = 1) {
   const url = query
     ? `${GUTENDEX}/books/?search=${encodeURIComponent(query)}&page=${page}`
     : `${GUTENDEX}/books/?sort=popular&page=${page}`
   return getJson(url)
+}
+
+export async function searchBooksAll(query, page = 1) {
+  if (!query?.trim()) return searchBooks(null, page)
+
+  const [gutResult, olResult] = await Promise.allSettled([
+    searchBooks(query, page),
+    getJson(
+      `${OPEN_LIBRARY}/search.json?q=${encodeURIComponent(query)}` +
+      `&fields=key,title,author_name,cover_i,ia,has_fulltext,subject,language,readinglog_count` +
+      `&limit=20&has_fulltext=true`
+    ),
+  ])
+
+  const gutBooks = gutResult.status === 'fulfilled'
+    ? (gutResult.value.results || []).map(b => ({ ...b, source: 'gutenberg' }))
+    : []
+
+  const seenTitles = new Set(gutBooks.map(b => b.title.toLowerCase()))
+  const olBooks = olResult.status === 'fulfilled'
+    ? (olResult.value.docs || [])
+        .filter(doc => doc.has_fulltext && doc.ia)
+        .map(normalizeOpenLibraryBook)
+        .filter(b => !seenTitles.has(b.title.toLowerCase()))
+    : []
+
+  return {
+    results: [...gutBooks, ...olBooks],
+    count:   gutBooks.length + olBooks.length,
+    sources: { gutenberg: gutBooks.length, openlibrary: olBooks.length },
+  }
 }
 
 export async function fetchBooksBySubject(subject, page = 1) {
@@ -124,6 +185,29 @@ export async function fetchBookText(book) {
   if (cached) return cached
 
   const formats = book.formats || {}
+
+  if (book.source === 'openlibrary') {
+    const iaId = book.ia
+    const urlsToTry = [
+      iaId && `${INTERNET_ARCHIVE}/download/${iaId}/${iaId}.txt`,
+      formats['text/plain'],
+      iaId && `${INTERNET_ARCHIVE}/download/${iaId}/${iaId}_djvu.txt`,
+    ].filter(Boolean).map(normaliseUrl)
+
+    let lastErr
+    for (const url of urlsToTry) {
+      try {
+        const text = await getText(url)
+        if (text && text.length > 500) {
+          const clean = text.trim()
+          writeBookCache(book.id, clean)
+          return clean
+        }
+      } catch (e) { lastErr = e }
+    }
+    throw lastErr || new Error('Text not available for this book on Internet Archive')
+  }
+
   const apiUrl =
     formats['text/plain; charset=utf-8'] ||
     formats['text/plain; charset=us-ascii'] ||
@@ -178,5 +262,5 @@ export function getBookColors(id) {
     { spine: '#922B21' }, { spine: '#1E6251' }, { spine: '#5D4037' },
     { spine: '#283593' }, { spine: '#BF360C' }, { spine: '#006064' },
   ]
-  return palettes[id % palettes.length]
+  return palettes[hashId(id) % palettes.length]
 }

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
+import { hashId } from '../utils/api'
 
 const SPINE_PALETTES = [
   { base: '#8B2635', read: '#c4736b' },
@@ -27,9 +28,9 @@ const SPINE_PALETTES = [
   { base: '#827717', read: '#dce775' },
 ]
 
-function bookPalette(id) { return SPINE_PALETTES[Number(id) % SPINE_PALETTES.length] }
-function bookH(id)  { return 130 + (Number(id) * 17 + 13) % 65 }
-function bookW(id)  { return 24  + (Number(id) * 7  +  5) % 16 }
+function bookPalette(id) { const n = hashId(id); return SPINE_PALETTES[n % SPINE_PALETTES.length] }
+function bookH(id)  { const n = hashId(id); return 130 + (n * 17 + 13) % 65 }
+function bookW(id)  { const n = hashId(id); return 24  + (n * 7  +  5) % 16 }
 
 function SpineBook({ book, progress, onTap, isActive }) {
   const pal = bookPalette(book.id)
