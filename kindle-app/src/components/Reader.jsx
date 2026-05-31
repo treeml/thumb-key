@@ -38,7 +38,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const [dictPos, setDictPos]     = useState(null)
   const [showRecs, setShowRecs]   = useState(false)
   const [highlightColor, setHighlightColor] = useState('#FFD700')
-  const [fontSize, setFontSize]   = useState(18)
+  const [fontSize, setFontSize]   = useState(() => Number(localStorage.getItem('tome_font_size') || 18))
   const [showHighlightPanel, setShowHighlightPanel] = useState(false)
   const [hasSelection, setHasSelection] = useState(false)
   const [pageColorId, setPageColorId] = useState(
@@ -75,6 +75,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   useEffect(() => { fontSizeRef.current = fontSize }, [fontSize])
   useEffect(() => { pageColorRef.current = pageColor }, [pageColor])
   useEffect(() => { localStorage.setItem('tome_page_color', pageColorId) }, [pageColorId])
+  useEffect(() => { localStorage.setItem('tome_font_size', String(fontSize)) }, [fontSize])
 
   // Load text
   useEffect(() => {
@@ -163,61 +164,60 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const fs     = fontSizeRef.current
     const col    = pageColorRef.current?.text || ''
 
-    if (dir === 'fwd') {
-      // Forward: fold moves right→left; front (current) stays left, back (next) underneath
-      const foldX  = w * (1 - progress)          // fold crease: starts at right, moves left
-      const foldW  = Math.max(0, w - foldX)       // width of the turning portion
+    // Anchor fold crease to where the touch started so it follows the finger.
+    // For programmatic turns (buttons) startX defaults to the screen edge.
+    const dr = dragRef.current
+    const sx = dr?.startX ?? (dir === 'fwd' ? w : 0)
 
-      // Front-left: clip current page to [0, foldX]
+    if (dir === 'fwd') {
+      // Crease sweeps from sx → 0 as progress goes 0 → 1
+      // Result: foldX === currentX (crease is exactly at the finger)
+      const foldX = sx * (1 - progress)
+      const foldW = Math.max(0, w - foldX)
+
       front.style.clipPath = foldX > 0
         ? `polygon(0 0,${foldX}px 0,${foldX}px 100%,0 100%)`
         : 'polygon(0 0,0 0,0 100%,0 100%)'
 
-      // Fold element: 3D turn of the right portion
       fold.style.left            = `${foldX}px`
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '0% 50%'
-      fold.style.transform       = `perspective(1200px) rotateY(${-progress * 90}deg)`
-      fold.style.filter          = `brightness(${1 - progress * 0.45})`
+      fold.style.transform       = `perspective(600px) rotateY(${-progress * 90}deg)`
+      fold.style.filter          = `brightness(${1 - progress * 0.5})`
       fold.style.opacity         = progress > 0.005 ? '1' : '0'
 
-      // Fold inner: shift so the correct portion of text is visible
       if (foldInner) {
-        foldInner.style.transform  = `translateY(-${curOff}px)`
-        foldInner.style.left       = `-${foldX}px`
-        foldInner.style.width      = `${w}px`
-        foldInner.style.fontSize   = `${fs}px`
+        foldInner.style.transform = `translateY(-${curOff}px)`
+        foldInner.style.left      = `-${foldX}px`
+        foldInner.style.width     = `${w}px`
+        foldInner.style.fontSize  = `${fs}px`
         if (col) foldInner.style.color = col
       }
 
     } else {
-      // Backward: fold moves left→right; front (current) stays right, back (prev) underneath
-      const foldX = w * progress             // fold crease: starts at left, moves right
-      const foldW = Math.max(0, foldX)       // width of turning left portion
+      // Crease sweeps from sx → w as progress goes 0 → 1
+      const foldW = Math.max(0, sx + progress * (w - sx))
 
-      // Front-right: clip current page to [foldX, w]
-      front.style.clipPath = foldX < w
-        ? `polygon(${foldX}px 0,100% 0,100% 100%,${foldX}px 100%)`
+      front.style.clipPath = foldW < w
+        ? `polygon(${foldW}px 0,100% 0,100% 100%,${foldW}px 100%)`
         : 'polygon(100% 0,100% 0,100% 100%,100% 100%)'
 
-      // Fold element: 3D turn of the left portion
       fold.style.left            = '0'
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '100% 50%'
-      fold.style.transform       = `perspective(1200px) rotateY(${progress * 90}deg)`
-      fold.style.filter          = `brightness(${1 - progress * 0.45})`
+      fold.style.transform       = `perspective(600px) rotateY(${progress * 90}deg)`
+      fold.style.filter          = `brightness(${1 - progress * 0.5})`
       fold.style.opacity         = progress > 0.005 ? '1' : '0'
 
       if (foldInner) {
-        foldInner.style.transform  = `translateY(-${curOff}px)`
-        foldInner.style.left       = '0'
-        foldInner.style.width      = `${w}px`
-        foldInner.style.fontSize   = `${fs}px`
+        foldInner.style.transform = `translateY(-${curOff}px)`
+        foldInner.style.left      = '0'
+        foldInner.style.width     = `${w}px`
+        foldInner.style.fontSize  = `${fs}px`
         if (col) foldInner.style.color = col
       }
     }
 
-    // Back layer is always full-width (no clip), revealed behind the fold
     back.style.clipPath = ''
   }, [])
 
@@ -274,8 +274,9 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     if (dir === 'bck' && curOff <= 0) return
 
     const next = dir === 'fwd' ? Math.min(curOff + ph, maxOff) : Math.max(curOff - ph, 0)
+    const w = wrapRef.current?.offsetWidth || window.innerWidth
     setBackLayerOffset(next)
-    dragRef.current = { dir, startX: 0, lastX: 0 }
+    dragRef.current = { dir, startX: dir === 'fwd' ? w : 0, lastX: 0 }
 
     animateFold(dir, 0, 1, 960, () => {
       dragRef.current    = null
@@ -319,9 +320,10 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       const x = e.touches[0].clientX
       dr.lastX = x
       const w = el.offsetWidth
+      // Normalise by distance from startX to the target edge so foldX === x
       const progress = dr.dir === 'fwd'
-        ? Math.max(0, Math.min(1, (dr.startX - x) / w))
-        : Math.max(0, Math.min(1, (x - dr.startX) / w))
+        ? Math.max(0, Math.min(1, (dr.startX - x) / Math.max(dr.startX, 1)))
+        : Math.max(0, Math.min(1, (x - dr.startX) / Math.max(w - dr.startX, 1)))
       applyDragVisuals(dr.dir, progress)
     }
     el.addEventListener('touchmove', onMove, { passive: false })
@@ -358,10 +360,9 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const x = e.changedTouches[0].clientX
     const w = wrapRef.current?.offsetWidth || window.innerWidth
     const progress = dr.dir === 'fwd'
-      ? Math.max(0, Math.min(1, (dr.startX - x) / w))
-      : Math.max(0, Math.min(1, (x - dr.startX) / w))
+      ? Math.max(0, Math.min(1, (dr.startX - x) / Math.max(dr.startX, 1)))
+      : Math.max(0, Math.min(1, (x - dr.startX) / Math.max(w - dr.startX, 1)))
 
-    // Quick flick (≥50px): treat as intent to turn regardless of progress
     const flick = Math.abs(dr.startX - x) >= 50
     finishDrag(dr.dir, flick ? Math.max(progress, 0.35) : progress)
   }, [finishDrag])
@@ -402,10 +403,20 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const totalPages  = pageH > 0 ? Math.ceil(totalH / pageH) : 1
   const progressPct = Math.round((offset / Math.max(totalH - pageH, 1)) * 100)
 
-  const displayHtml  = applyHighlights(fullText, highlights)
-    .replace(/\n\n+/g, '</p><p>')
-    .replace(/\n/g, '<br/>')
-  const pageContent  = `<p>${displayHtml}</p>`
+  // Reflow Gutenberg text: paragraphs split on blank lines, single newlines → space
+  // (Gutenberg wraps at ~70 chars; those hard breaks look terrible on a phone)
+  const pageContent = (() => {
+    const raw = applyHighlights(fullText, highlights)
+      .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    return raw
+      .split(/\n{2,}/)
+      .map(block => {
+        const text = block.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+        return text ? `<p>${text}</p>` : ''
+      })
+      .filter(Boolean)
+      .join('')
+  })()
 
   const paperStyle = pageColor ? { background: pageColor.bg, color: pageColor.text } : undefined
   const frontStyle = { transform: `translateY(-${offset}px)`, fontSize }
