@@ -57,6 +57,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const backInnerRef  = useRef(null)  // revealed page text div (transform set via DOM)
   const foldRef       = useRef(null)  // 3-D fold element (the turning portion)
   const foldInnerRef  = useRef(null)  // text div inside the fold element
+  const foldOverlayRef = useRef(null) // gradient overlay that simulates cylindrical curvature
 
   // Value refs — let event handlers read current values without stale closures
   const offsetRef      = useRef(0)
@@ -152,11 +153,12 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
 
   // Update all three layers directly on the DOM (no React setState during drag)
   const applyDragVisuals = useCallback((dir, progress) => {
-    const front     = frontLayerRef.current
-    const back      = backLayerRef.current
-    const fold      = foldRef.current
-    const foldInner = foldInnerRef.current
-    const wrap      = wrapRef.current
+    const front       = frontLayerRef.current
+    const back        = backLayerRef.current
+    const fold        = foldRef.current
+    const foldInner   = foldInnerRef.current
+    const foldOverlay = foldOverlayRef.current
+    const wrap        = wrapRef.current
     if (!front || !back || !fold || !wrap) return
 
     const w = wrap.offsetWidth
@@ -164,14 +166,25 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const fs     = fontSizeRef.current
     const col    = pageColorRef.current?.text || ''
 
-    // Anchor fold crease to where the touch started so it follows the finger.
-    // For programmatic turns (buttons) startX defaults to the screen edge.
+    // Anchor fold crease to touch start so the crease follows the finger exactly.
+    // foldX = sx*(1-p) for fwd → at any moment foldX === currentX of finger.
     const dr = dragRef.current
     const sx = dr?.startX ?? (dir === 'fwd' ? w : 0)
 
+    // Cylindrical surface shading: paper curves away from viewer.
+    // Left edge of fold (crease) faces viewer → bright; right edge curves away → dark.
+    const angle    = progress * Math.PI / 2         // 0 → π/2
+    const curveDark  = (1 - Math.cos(angle)) * 0.62  // 0 at flat, 0.62 at edge-on
+    const curveLight = Math.cos(angle) * 0.08        // subtle crease highlight
+    if (foldOverlay) {
+      const grad = dir === 'fwd'
+        ? `linear-gradient(to right, rgba(255,255,255,${curveLight.toFixed(3)}) 0%, rgba(0,0,0,${curveDark.toFixed(3)}) 100%)`
+        : `linear-gradient(to left,  rgba(255,255,255,${curveLight.toFixed(3)}) 0%, rgba(0,0,0,${curveDark.toFixed(3)}) 100%)`
+      foldOverlay.style.background = grad
+      foldOverlay.style.opacity    = progress > 0.005 ? '1' : '0'
+    }
+
     if (dir === 'fwd') {
-      // Crease sweeps from sx → 0 as progress goes 0 → 1
-      // Result: foldX === currentX (crease is exactly at the finger)
       const foldX = sx * (1 - progress)
       const foldW = Math.max(0, w - foldX)
 
@@ -182,8 +195,9 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       fold.style.left            = `${foldX}px`
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '0% 50%'
-      fold.style.transform       = `perspective(600px) rotateY(${-progress * 90}deg)`
-      fold.style.filter          = `brightness(${1 - progress * 0.5})`
+      // perspective(400px): tighter vanishing point = more dramatic compression as paper curls
+      fold.style.transform       = `perspective(400px) rotateY(${-progress * 90}deg)`
+      fold.style.filter          = 'none'
       fold.style.opacity         = progress > 0.005 ? '1' : '0'
 
       if (foldInner) {
@@ -195,7 +209,6 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       }
 
     } else {
-      // Crease sweeps from sx → w as progress goes 0 → 1
       const foldW = Math.max(0, sx + progress * (w - sx))
 
       front.style.clipPath = foldW < w
@@ -205,8 +218,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       fold.style.left            = '0'
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '100% 50%'
-      fold.style.transform       = `perspective(600px) rotateY(${progress * 90}deg)`
-      fold.style.filter          = `brightness(${1 - progress * 0.5})`
+      fold.style.transform       = `perspective(400px) rotateY(${progress * 90}deg)`
+      fold.style.filter          = 'none'
       fold.style.opacity         = progress > 0.005 ? '1' : '0'
 
       if (foldInner) {
@@ -229,6 +242,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       foldRef.current.style.filter    = ''
       foldRef.current.style.width     = '0'
     }
+    if (foldOverlayRef.current) foldOverlayRef.current.style.background = ''
   }, [])
 
   // useLayoutEffect runs synchronously after React commits DOM changes.
@@ -544,8 +558,10 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
             <div ref={foldInnerRef} className="page-text-inner page-text-fold"
               dangerouslySetInnerHTML={{ __html: pageContent }} />
           </div>
-          {/* Edge shadow that darkens the fold crease */}
-          <div className="fold-edge-shadow" />
+          {/* Cylindrical shading: gradient simulates curved paper surface */}
+          <div className="fold-curl-overlay" ref={foldOverlayRef} />
+          {/* Bright highlight at the crease — like light reflecting off a sharp paper fold */}
+          <div className="fold-crease-highlight" />
         </div>
 
       </div>

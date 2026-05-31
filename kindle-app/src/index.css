@@ -584,11 +584,26 @@ input, textarea { font-family: inherit; }
   top: 0;
   /* left, width, transform all set via DOM ref */
 }
-/* Crease shadow on the fold's leading edge */
-.fold-edge-shadow {
-  position: absolute; inset: 0; left: 0; width: 20px;
-  background: linear-gradient(90deg, rgba(0,0,0,0.25) 0%, transparent 100%);
+/* Cylindrical shading gradient — makes the flat element look like curved paper.
+   Background is set dynamically per frame in applyDragVisuals. */
+.fold-curl-overlay {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 6;
+  opacity: 0;
+}
+
+/* Sharp bright highlight at the fold crease — light reflecting off the paper crease point */
+.fold-crease-highlight {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 6px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.08) 60%, transparent 100%);
   pointer-events: none; z-index: 10;
+}
+
+/* Soft shadow just inside the crease on the back page */
+.fold-edge-shadow {
+  position: absolute; inset: 0; left: 0; width: 28px;
+  background: linear-gradient(90deg, rgba(0,0,0,0.18) 0%, transparent 100%);
+  pointer-events: none; z-index: 5;
 }
 
 /* Page colour swatches */
