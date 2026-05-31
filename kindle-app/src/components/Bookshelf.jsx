@@ -1,6 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
-import { Capacitor } from '@capacitor/core'
-import { searchBooks, searchBooksAll, fetchBooksBySubject } from '../utils/api'
+import { searchBooks, fetchBooksBySubject } from '../utils/api'
 import BookCard from './BookCard'
 
 const CATEGORIES = [
@@ -59,8 +58,7 @@ function ShelfRow({ title, books, onSelect, getProgress, loading, error, onRetry
   )
 }
 
-export default function Bookshelf({ onSelectBook, getProgress, myLibrary, searchQuery, onOpenLibrary, addBook, hasBook, browseSignal }) {
-  const containerRef = useRef(null)
+export default function Bookshelf({ onSelectBook, getProgress, myLibrary, onOpenLibrary, addBook, hasBook }) {
   const [sections, setSections] = useState(() => ({ ...sectionCache }))
   const [loading, setLoading] = useState({})
   const [errors, setErrors] = useState({})
@@ -98,66 +96,9 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, search
     return () => timers.forEach(clearTimeout)
   }, [fetchCategory])
 
-  useEffect(() => {
-    if (browseSignal) window.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [browseSignal])
-
-  const [searchResults, setSearchResults] = useState(null)
-  const [searching, setSearching] = useState(false)
-  const [searchError, setSearchError] = useState(false)
-  const [searchSources, setSearchSources] = useState(null)
-
-  useEffect(() => {
-    if (!searchQuery?.trim()) { setSearchResults(null); setSearchError(false); setSearchSources(null); return }
-    setSearching(true)
-    setSearchError(false)
-    setSearchSources(null)
-    searchBooksAll(searchQuery)
-      .then(d => { setSearchResults(d.results || []); setSearchSources(d.sources || null) })
-      .catch(() => { setSearchResults([]); setSearchError(true) })
-      .finally(() => setSearching(false))
-  }, [searchQuery])
-
-  if (searchResults !== null) {
-    const gutCount = searchSources?.gutenberg || 0
-    const olCount  = searchSources?.openlibrary || 0
-    return (
-      <div className="bookshelf-container" ref={containerRef}>
-        <div className="search-results-header">
-          <h2>Results for "{searchQuery}"</h2>
-          <span className="result-count">{searchResults.length} books</span>
-        </div>
-        {searchSources && (gutCount > 0 || olCount > 0) && (
-          <div className="search-sources-row">
-            {gutCount > 0 && <span className="src-chip src-gut">📕 {gutCount} Gutenberg</span>}
-            {olCount  > 0 && <span className="src-chip src-ol">📚 {olCount} Open Library</span>}
-          </div>
-        )}
-        {searchError && <div className="search-error-msg">Connection error — check your internet and try again.</div>}
-        <div className="search-results-grid">
-          {searching
-            ? Array.from({ length: 8 }).map((_, i) => <div key={i} className="book-card-skeleton" />)
-            : searchResults.map(book => (
-              <BookCard
-                key={book.id}
-                book={book}
-                progress={getProgress(book.id)}
-                onClick={onSelectBook}
-                onAddToLibrary={addBook}
-                inLibrary={hasBook?.(book.id)}
-              />
-            ))
-          }
-          {!searching && !searchError && searchResults.length === 0 && (
-            <div className="empty-state">No books found. Try another search.</div>
-          )}
-        </div>
-      </div>
-    )
-  }
 
   return (
-    <div className="bookshelf-container" ref={containerRef}>
+    <div className="bookshelf-container">
       <div className="shelf-row my-library-row">
         <div className="shelf-row-header">
           <h2 className="shelf-row-title">My Library</h2>

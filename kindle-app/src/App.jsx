@@ -3,15 +3,14 @@ import Bookshelf from './components/Bookshelf'
 import BookDetail from './components/BookDetail'
 import Reader from './components/Reader'
 import Library from './components/Library'
+import SearchPage from './components/SearchPage'
 import { useLibrary } from './hooks/useLibrary'
 
 export default function App() {
-  const [view, setView] = useState('shelf')
+  const [view, setView]           = useState('shelf')
   const [selectedBook, setSelectedBook] = useState(null)
+  const [returnView, setReturnView]     = useState('shelf')
   const [nightMode, setNightMode] = useState(() => localStorage.getItem('tome_night') === 'true')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchInput, setSearchInput] = useState('')
-  const [browseSignal, setBrowseSignal] = useState(0)
 
   const { books: myLibrary, addBook, removeBook, hasBook, setProgress, getProgress } = useLibrary()
 
@@ -22,8 +21,9 @@ export default function App() {
 
   const handleSelectBook = useCallback((book) => {
     setSelectedBook(book)
+    setReturnView(view)
     setView('detail')
-  }, [])
+  }, [view])
 
   const handleRead = useCallback((book) => {
     setSelectedBook(book)
@@ -33,8 +33,8 @@ export default function App() {
 
   const handleBackFromDetail = useCallback(() => {
     setSelectedBook(null)
-    setView('shelf')
-  }, [])
+    setView(returnView || 'shelf')
+  }, [returnView])
 
   const handleBackFromReader = useCallback((newBook) => {
     if (newBook && newBook.id) {
@@ -45,39 +45,26 @@ export default function App() {
     }
   }, [])
 
-  const handleOpenLibrary = useCallback(() => { setView('library') }, [])
-
-  const handleSearch = (e) => {
-    e.preventDefault()
-    setSearchQuery(searchInput)
-    setView('shelf')
-  }
+  const handleOpenLibrary = useCallback(() => setView('library'), [])
 
   return (
     <div className={`app ${nightMode ? 'night' : 'day'}`}>
       {view !== 'reader' && (
         <header className="app-header">
           <div className="header-inner">
-            <div className="logo" onClick={() => { setView('shelf'); setSelectedBook(null); setSearchQuery(''); setSearchInput('') }}>
+            <div className="logo" onClick={() => { setView('shelf'); setSelectedBook(null) }}>
               <span className="logo-icon">📖</span>
               <span className="logo-text">Tome</span>
             </div>
 
-            <form className="search-form" onSubmit={handleSearch}>
-              <input
-                className="search-input"
-                type="text"
-                placeholder="Search 70,000+ free books…"
-                value={searchInput}
-                onChange={e => setSearchInput(e.target.value)}
-              />
-              <button type="submit" className="search-btn">🔍</button>
-            </form>
-
             <div className="header-actions">
               <button
                 className={`library-tab ${view === 'shelf' ? 'active' : ''}`}
-                onClick={() => { setView('shelf'); setSearchQuery(''); setSearchInput(''); setBrowseSignal(s => s + 1) }}
+                onClick={() => setView('shelf')}
+              >Discover</button>
+              <button
+                className={`library-tab ${view === 'browse' ? 'active' : ''}`}
+                onClick={() => setView('browse')}
               >Browse</button>
               <button
                 className={`library-tab ${view === 'library' ? 'active' : ''}`}
@@ -96,19 +83,28 @@ export default function App() {
       )}
 
       <main className="app-main">
-        {/* Keep mounted so fetched books aren't lost on navigation */}
+        {/* Keep Bookshelf mounted so fetched category data isn't lost */}
         <div style={{ display: view === 'shelf' ? 'block' : 'none' }}>
           <Bookshelf
             onSelectBook={handleSelectBook}
             getProgress={getProgress}
             myLibrary={myLibrary}
-            searchQuery={searchQuery}
             onOpenLibrary={handleOpenLibrary}
             addBook={addBook}
             hasBook={hasBook}
-            browseSignal={browseSignal}
           />
         </div>
+
+        {view === 'browse' && (
+          <SearchPage
+            onSelectBook={handleSelectBook}
+            getProgress={getProgress}
+            addBook={addBook}
+            hasBook={hasBook}
+            onBack={() => setView('shelf')}
+          />
+        )}
+
         {view === 'detail' && selectedBook && (
           <BookDetail
             book={selectedBook}

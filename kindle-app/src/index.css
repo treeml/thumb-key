@@ -911,6 +911,85 @@ input, textarea { font-family: inherit; }
 /* ===== MISC ===== */
 .btn-primary { cursor: pointer; }
 
+/* ===== SEARCH / BROWSE PAGE ===== */
+.search-page {
+  max-width: 1100px; margin: 0 auto;
+  padding: 0 20px 80px;
+}
+
+.search-page-topbar { padding: 16px 0 4px; }
+
+.search-page-hero {
+  padding: 40px 0 36px;
+  text-align: center;
+}
+
+.search-page-title {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(28px, 5vw, 44px);
+  color: var(--gold); margin-bottom: 8px;
+}
+
+.search-page-sub {
+  font-size: 14px; color: var(--text-muted); margin-bottom: 28px;
+}
+
+.search-page-form {
+  display: flex; max-width: 580px; margin: 0 auto;
+}
+
+.search-page-input {
+  flex: 1; padding: 15px 20px;
+  font-size: 16px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-right: none;
+  border-radius: var(--radius) 0 0 var(--radius);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.search-page-input::placeholder { color: var(--text-muted); }
+.search-page-input:focus { border-color: var(--gold); }
+
+.search-page-btn {
+  padding: 15px 28px;
+  background: var(--gold); color: #1a0d05;
+  font-size: 15px; font-weight: 700;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s;
+  border: 2px solid var(--gold);
+}
+.search-page-btn:hover { background: var(--gold-light); border-color: var(--gold-light); }
+
+.search-page-tips { padding: 20px 0 40px; text-align: center; }
+.tip-label { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
+.tip-chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.tip-chip {
+  padding: 8px 16px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; color: var(--text-secondary);
+  font-size: 13px; cursor: pointer;
+  transition: all 0.15s;
+}
+.tip-chip:hover { border-color: var(--gold); color: var(--gold); background: var(--surface2); }
+
+.search-page-loading {
+  text-align: center; padding: 60px 20px; color: var(--text-muted);
+}
+.search-spinner {
+  width: 38px; height: 38px;
+  border: 3px solid var(--border);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  margin: 0 auto 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.search-page-results { padding-top: 4px; }
+
 /* ===== LIBRARY BUILDING ENTRY (in Bookshelf) ===== */
 .lib-book-count {
   font-size: 12px; color: var(--text-muted);
