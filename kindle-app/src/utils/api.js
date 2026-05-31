@@ -1,4 +1,5 @@
 import { CapacitorHttp, Capacitor } from '@capacitor/core'
+import { idbGet } from './idb'
 
 const GUTENDEX        = 'https://gutendex.com'
 const DICT_API        = 'https://api.dictionaryapi.dev/api/v2/entries/en'
@@ -181,6 +182,13 @@ function writeBookCache(bookId, text) {
 }
 
 export async function fetchBookText(book) {
+  // Local imports are stored in IndexedDB
+  if (book.source === 'local') {
+    const stored = await idbGet(book.id)
+    if (stored?.content) return stored.content
+    throw new Error('Book content not found — it may have been deleted from device storage.')
+  }
+
   const cached = readBookCache(book.id)
   if (cached) return cached
 

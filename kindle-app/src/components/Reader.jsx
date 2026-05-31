@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useLayoutEffect } from
 import { App as CapApp } from '@capacitor/app'
 import { fetchBookText } from '../utils/api'
 import { useHighlights } from '../hooks/useHighlights'
+import { detectChapters } from '../utils/epubParser'
 import Dictionary from './Dictionary'
 import Recommendations from './Recommendations'
 
@@ -37,10 +38,12 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const [dictWord, setDictWord]   = useState(null)
   const [dictPos, setDictPos]     = useState(null)
   const [showRecs, setShowRecs]   = useState(false)
+  const [showToc,  setShowToc]    = useState(false)
   const [highlightColor, setHighlightColor] = useState('#FFD700')
   const [fontSize, setFontSize]   = useState(() => Number(localStorage.getItem('tome_font_size') || 18))
   const [showHighlightPanel, setShowHighlightPanel] = useState(false)
   const [hasSelection, setHasSelection] = useState(false)
+  const [autoToc, setAutoToc]     = useState([])
   const [pageColorId, setPageColorId] = useState(
     () => localStorage.getItem('tome_page_color') || 'cream'
   )
@@ -78,11 +81,21 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   useEffect(() => { localStorage.setItem('tome_page_color', pageColorId) }, [pageColorId])
   useEffect(() => { localStorage.setItem('tome_font_size', String(fontSize)) }, [fontSize])
 
+  // The active TOC is from the book object (epub/local) or auto-detected for Gutenberg
+  const activeToc = (book.toc?.length > 0) ? book.toc : autoToc
+
   // Load text
   useEffect(() => {
-    setLoading(true); setError(null); setOffset(0)
+    setLoading(true); setError(null); setOffset(0); setAutoToc([])
     fetchBookText(book)
-      .then(text => setFullText(text))
+      .then(text => {
+        setFullText(text)
+        // Auto-detect chapters for plain-text books
+        if (book.contentFormat !== 'html' && book.source !== 'local') {
+          const chapters = detectChapters(text)
+          if (chapters.length > 1) setAutoToc(chapters)
+        }
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [book.id])
@@ -125,6 +138,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     let handle
     try {
       CapApp.addListener('backButton', () => {
+        if (showToc)            { setShowToc(false); return }
         if (showMenu)           { setShowMenu(false); return }
         if (showHighlightPanel) { setShowHighlightPanel(false); return }
         if (showRecs)           { setShowRecs(false); return }
@@ -133,7 +147,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       }).then(h => { handle = h })
     } catch {}
     return () => { try { handle?.remove() } catch {} }
-  }, [showMenu, showHighlightPanel, showRecs, dictWord, onBack])
+  }, [showToc, showMenu, showHighlightPanel, showRecs, dictWord, onBack])
 
   // Selection tracking for highlight button
   useEffect(() => {
@@ -417,12 +431,42 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const totalPages  = pageH > 0 ? Math.ceil(totalH / pageH) : 1
   const progressPct = Math.round((offset / Math.max(totalH - pageH, 1)) * 100)
 
-  // Reflow Gutenberg text: paragraphs split on blank lines, single newlines → space
-  // (Gutenberg wraps at ~70 chars; those hard breaks look terrible on a phone)
+  // Jump to a chapter by anchor ID (epub) or char offset (gutenberg auto-toc)
+  const jumpToChapter = useCallback((entry) => {
+    if (entry.anchorId && frontInnerRef.current) {
+      const el = frontInnerRef.current.querySelector(`#${entry.anchorId}`)
+      if (el) {
+        const raw   = el.offsetTop
+        const snapped = Math.round(raw / Math.max(pageHRef.current, 1)) * Math.max(pageHRef.current, 1)
+        setOffset(Math.max(0, Math.min(snapped, Math.max(0, totalHRef.current - pageHRef.current))))
+        setShowToc(false)
+        return
+      }
+    }
+    if (entry.charOffset != null && fullText) {
+      const frac    = entry.charOffset / Math.max(fullText.length, 1)
+      const raw     = frac * totalHRef.current
+      const snapped = Math.round(raw / Math.max(pageHRef.current, 1)) * Math.max(pageHRef.current, 1)
+      setOffset(Math.max(0, Math.min(snapped, Math.max(0, totalHRef.current - pageHRef.current))))
+      setShowToc(false)
+    }
+  }, [fullText])
+
+  // Jump to highlight page
+  const jumpToHighlight = useCallback((hl) => {
+    const ph = pageHRef.current
+    if (!ph) return
+    setOffset(Math.min(hl.pageIndex * ph, Math.max(0, totalHRef.current - ph)))
+    setShowHighlightPanel(false)
+  }, [])
+
+  // Reflow plain-text (Gutenberg) or pass-through HTML (epub/local)
   const pageContent = (() => {
     const raw = applyHighlights(fullText, highlights)
-      .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    if (book.contentFormat === 'html') return raw  // ePub: use HTML as-is
+    // Plain text: split on blank lines, collapse single newlines
     return raw
+      .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
       .split(/\n{2,}/)
       .map(block => {
         const text = block.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
@@ -465,8 +509,14 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       <div className="reader-topbar">
         <button className="reader-back-btn" onClick={onBack}>← Library</button>
         <div className="reader-book-title-bar">{book.title}</div>
-        <button className="reader-menu-btn"
-          onClick={e => { e.stopPropagation(); setShowMenu(p => !p) }}>⋮</button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {activeToc.length > 0 && (
+            <button className="reader-menu-btn"
+              onClick={e => { e.stopPropagation(); setShowToc(p => !p) }} title="Table of Contents">☰</button>
+          )}
+          <button className="reader-menu-btn"
+            onClick={e => { e.stopPropagation(); setShowMenu(p => !p) }}>⋮</button>
+        </div>
       </div>
 
       {/* Settings menu */}
@@ -605,13 +655,35 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
             <p className="panel-empty">No highlights yet. Select text then tap Highlight.</p>}
           {highlights.map(hl => (
             <div key={hl.id} className="highlight-item"
-              style={{ borderLeft: `4px solid ${hl.color}` }}>
+              style={{ borderLeft: `4px solid ${hl.color}`, cursor: 'pointer' }}
+              onClick={() => jumpToHighlight(hl)}>
               <p className="highlight-text">"{hl.text}"</p>
               <div className="highlight-meta">
-                <button className="hl-remove" onClick={() => removeHighlight(hl.id)}>Remove</button>
+                <span className="hl-page-hint">Tap to jump · Page {hl.pageIndex + 1}</span>
+                <button className="hl-remove" onClick={e => { e.stopPropagation(); removeHighlight(hl.id) }}>Remove</button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {showToc && (
+        <div className={`toc-panel ${nightMode ? 'night' : ''}`}
+          onClick={e => e.stopPropagation()}>
+          <div className="panel-header">
+            <h3>Contents</h3>
+            <button onClick={() => setShowToc(false)}>×</button>
+          </div>
+          <div className="toc-list">
+            {activeToc.map((entry, i) => (
+              <button key={i}
+                className="toc-item"
+                style={{ paddingLeft: `${16 + (entry.level || 0) * 12}px` }}
+                onClick={() => jumpToChapter(entry)}>
+                {entry.title}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

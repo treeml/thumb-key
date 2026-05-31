@@ -47,20 +47,67 @@ input, textarea { font-family: inherit; }
 /* ===== APP SHELL ===== */
 .app { min-height: 100vh; display: flex; flex-direction: column; }
 .app.night { --page-bg: #1a1208; --page-text: #d4b896; }
+.app-main { flex: 1; }
+.app-main.with-bottom-nav { padding-bottom: 64px; }
 
 /* ===== HEADER ===== */
 .app-header {
   position: sticky; top: 0; z-index: 100;
   background: linear-gradient(180deg, #0d0805 0%, var(--bg) 100%);
   border-bottom: 1px solid var(--border);
-  padding: 0;
   box-shadow: 0 2px 20px rgba(0,0,0,0.5);
 }
 .header-inner {
   max-width: 1400px; margin: 0 auto;
-  display: flex; align-items: center; gap: 16px;
-  padding: 12px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px;
 }
+.header-right { display: flex; align-items: center; gap: 8px; }
+
+/* ===== BOTTOM NAV ===== */
+.bottom-nav {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+  display: flex; align-items: stretch;
+  background: linear-gradient(180deg, #100904 0%, #0d0805 100%);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 16px rgba(0,0,0,0.5);
+  height: 60px;
+}
+.bnav-btn {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); transition: color 0.15s;
+  padding: 4px 0;
+}
+.bnav-btn.active { color: var(--gold); }
+.bnav-btn:active { opacity: 0.7; }
+.bnav-icon { font-size: 20px; line-height: 1; }
+.bnav-label { font-size: 10px; font-weight: 600; letter-spacing: 0.3px; }
+
+/* ===== IMPORT BUTTON ===== */
+.import-btn {
+  padding: 6px 14px; border-radius: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--gold); font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.import-btn:hover { background: var(--surface2); border-color: var(--gold); }
+.import-btn:disabled { opacity: 0.5; cursor: default; }
+
+.import-toast {
+  position: fixed; bottom: 72px; left: 50%; transform: translateX(-50%);
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-primary); padding: 10px 20px;
+  border-radius: 20px; font-size: 13px; z-index: 300;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  max-width: calc(100vw - 32px); text-align: center;
+  animation: toastIn 0.2s ease;
+}
+.import-toast.done  { border-color: #4caf50; color: #81c784; }
+.import-toast.error { border-color: #f44336; color: #ef9a9a; }
+@keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } }
 
 .logo {
   display: flex; align-items: center; gap: 8px;
@@ -132,8 +179,6 @@ input, textarea { font-family: inherit; }
   transition: all 0.2s;
 }
 .night-toggle:hover { border-color: var(--gold); }
-
-.app-main { flex: 1; }
 
 /* ===== BOOKSHELF ===== */
 .bookshelf-container {
@@ -753,13 +798,206 @@ input, textarea { font-family: inherit; }
 .highlight-meta {
   display: flex; align-items: center; justify-content: space-between;
 }
-.highlight-meta span { font-size: 11px; color: #9a7a50; }
+.hl-page-hint { font-size: 11px; color: #9a7a50; }
+.night .hl-page-hint { color: #7a6050; }
 .hl-remove {
   font-size: 11px; color: #c0804a; padding: 2px 8px;
   border: 1px solid #e0b080; border-radius: 10px;
   transition: all 0.15s;
 }
 .hl-remove:hover { background: #fff0e0; }
+
+/* ===== TOC PANEL ===== */
+.toc-panel {
+  position: fixed; left: 0; top: 0; bottom: 0;
+  width: min(340px, 88vw);
+  background: var(--page-bg);
+  border-right: 1px solid rgba(0,0,0,0.1);
+  box-shadow: 8px 0 32px rgba(0,0,0,0.12);
+  overflow-y: auto; z-index: 300;
+  animation: slideInLeft 0.25s ease;
+}
+.toc-panel.night { background: #1c1208; border-color: rgba(255,255,255,0.07); }
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+.toc-list { padding: 8px 0 24px; }
+.toc-item {
+  display: block; width: 100%;
+  text-align: left; padding: 10px 20px;
+  font-size: 14px; color: #5a3a1a;
+  border-bottom: 1px solid rgba(0,0,0,0.04);
+  transition: background 0.12s;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.toc-item:hover { background: rgba(0,0,0,0.04); color: #3a2010; }
+.night .toc-item { color: #c8a078; }
+.night .toc-item:hover { background: rgba(255,255,255,0.05); color: #e8c8a0; }
+
+/* ===== EPUB CONTENT ===== */
+.epub-chapter { margin-bottom: 2.5em; }
+.epub-chapter h1, .epub-chapter h2, .epub-chapter h3 {
+  font-family: 'Playfair Display', serif;
+  margin: 1.2em 0 0.6em; line-height: 1.3;
+}
+.epub-chapter h1 { font-size: 1.5em; }
+.epub-chapter h2 { font-size: 1.25em; }
+.epub-chapter h3 { font-size: 1.1em; }
+.epub-chapter p  { margin-bottom: 0.85em; line-height: 1.72; text-indent: 1.2em; }
+.epub-chapter p:first-child { text-indent: 0; }
+.epub-chapter img { max-width: 100% !important; height: auto !important; display: block; margin: 1em auto; border-radius: 4px; }
+.epub-chapter blockquote { margin: 1em 1.5em; padding-left: 1em; border-left: 3px solid currentColor; opacity: 0.78; font-style: italic; }
+.epub-chapter table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.85em; }
+.epub-chapter td, .epub-chapter th { border: 1px solid rgba(0,0,0,0.15); padding: 5px 8px; }
+.epub-chapter ul, .epub-chapter ol { margin: 0.5em 0 0.5em 1.5em; line-height: 1.7; }
+
+/* ===== AUDIO LIBRARY ===== */
+.audio-library { max-width: 900px; margin: 0 auto; padding: 24px 20px 80px; }
+.audio-library-header { margin-bottom: 24px; }
+.audio-library-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 28px; color: var(--gold);
+}
+.audio-empty { text-align: center; padding: 80px 20px; }
+.audio-empty-icon { font-size: 60px; margin-bottom: 16px; }
+.audio-empty p { color: var(--text-secondary); font-size: 15px; margin-bottom: 6px; }
+.audio-empty-sub { color: var(--text-muted) !important; font-size: 13px !important; }
+.audio-book-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+}
+.audio-book-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+  position: relative; overflow: hidden;
+}
+.audio-book-card:hover { transform: translateY(-4px); border-color: var(--gold); }
+.audio-book-art {
+  aspect-ratio: 1; background: var(--surface2);
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.audio-book-art img { width: 100%; height: 100%; object-fit: cover; }
+.audio-art-placeholder { font-size: 48px; }
+.audio-book-play-icon {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.4); color: white; font-size: 32px;
+  opacity: 0; transition: opacity 0.15s;
+}
+.audio-book-card:hover .audio-book-play-icon { opacity: 1; }
+.audio-book-meta { padding: 12px 14px; }
+.audio-book-title { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 3px; line-height: 1.3; }
+.audio-book-author { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.audio-book-duration { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+.audio-progress-bar { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.audio-progress-fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--accent)); border-radius: 2px; }
+.audio-delete-btn {
+  position: absolute; top: 8px; right: 8px; width: 24px; height: 24px;
+  background: rgba(0,0,0,0.5); color: white; border-radius: 50%;
+  font-size: 16px; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity 0.15s;
+}
+.audio-book-card:hover .audio-delete-btn { opacity: 1; }
+
+/* ===== AUDIO PLAYER ===== */
+.audio-player-page {
+  min-height: 100vh; padding: 0 20px 40px;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+  max-width: 560px; margin: 0 auto;
+}
+.ap-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 0 8px; gap: 8px;
+}
+.ap-icon-btn {
+  padding: 6px 12px; border-radius: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-secondary); font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.ap-sleep-chip {
+  padding: 5px 12px; border-radius: 12px;
+  background: rgba(201,168,76,0.15); border: 1px solid var(--gold);
+  color: var(--gold); font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.ap-speed-menu, .ap-sleep-menu {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 12px 0; justify-content: flex-end;
+}
+.ap-speed-btn, .ap-sleep-btn {
+  padding: 6px 14px; border-radius: 16px;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-secondary); font-size: 13px; cursor: pointer;
+  transition: all 0.15s;
+}
+.ap-speed-btn.active, .ap-speed-btn:hover,
+.ap-sleep-btn:hover { background: var(--gold); color: #1a0d05; border-color: var(--gold); }
+.ap-artwork {
+  width: min(280px, 80vw); margin: 24px auto 20px;
+  border-radius: 12px; overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  aspect-ratio: 1;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface);
+}
+.ap-artwork img { width: 100%; height: 100%; object-fit: cover; }
+.ap-artwork-placeholder { font-size: 80px; }
+.ap-meta { text-align: center; margin-bottom: 20px; padding: 0 8px; }
+.ap-title { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--text-primary); margin-bottom: 4px; }
+.ap-author { font-size: 14px; color: var(--text-muted); margin-bottom: 4px; }
+.ap-chapter-label { font-size: 12px; color: var(--gold); margin-top: 2px; }
+.ap-progress-wrap {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 24px;
+}
+.ap-time { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+.ap-scrubber {
+  flex: 1; height: 4px; appearance: none; -webkit-appearance: none;
+  background: var(--border); border-radius: 2px; cursor: pointer; outline: none;
+}
+.ap-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 16px; height: 16px;
+  border-radius: 50%; background: var(--gold); cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+.ap-controls {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  margin-bottom: 32px;
+}
+.ap-ctrl-btn {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-secondary); font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.15s;
+}
+.ap-ctrl-btn:hover { background: var(--surface2); color: var(--text-primary); }
+.ap-play-btn {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: var(--gold); border: none; color: #1a0d05;
+  font-size: 26px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.15s;
+  box-shadow: 0 4px 16px rgba(201,168,76,0.35);
+}
+.ap-play-btn:hover { background: var(--gold-light); transform: scale(1.04); }
+.ap-chapters { margin-top: 8px; }
+.ap-chapters-title { font-size: 12px; font-weight: 700; color: var(--text-muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+.ap-chapters-list { display: flex; flex-direction: column; gap: 2px; }
+.ap-chapter-item {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  padding: 10px 12px; border-radius: 6px;
+  background: var(--surface); border: 1px solid transparent;
+  cursor: pointer; transition: all 0.12s;
+}
+.ap-chapter-item:hover { border-color: var(--border); }
+.ap-chapter-item.active { border-color: var(--gold); background: var(--surface2); }
+.ap-ch-num { font-size: 11px; color: var(--text-muted); width: 20px; flex-shrink: 0; }
+.ap-ch-title { flex: 1; font-size: 13px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ap-ch-time { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
+.ap-chapter-item.active .ap-ch-title { color: var(--gold); }
 
 /* ===== DICTIONARY POPUP ===== */
 .dictionary-popup {
