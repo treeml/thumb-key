@@ -71,6 +71,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const dragRef        = useRef(null)  // { dir, startX, lastX } | null
   const pendingReset   = useRef(false) // set true when we need resetDragVisuals after React commit
 
+  const hasRestored = useRef(false)
+
   const { highlights, addHighlight, removeHighlight } = useHighlights(book.id)
 
   useEffect(() => { offsetRef.current = offset }, [offset])
@@ -87,6 +89,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   // Load text
   useEffect(() => {
     setLoading(true); setError(null); setOffset(0); setAutoToc([])
+    hasRestored.current = false
     fetchBookText(book)
       .then(text => {
         setFullText(text)
@@ -107,12 +110,19 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const th = frontInnerRef.current.scrollHeight
     setPageH(ph)
     setTotalH(th)
-    if (initialProgress > 0 && offsetRef.current === 0) {
-      const target = Math.round((initialProgress / 100) * (th - ph))
-      const snapped = Math.round(target / ph) * ph
-      setOffset(Math.max(0, Math.min(snapped, th - ph)))
+    if (!hasRestored.current && ph > 0) {
+      hasRestored.current = true
+      // Prefer exact page index (written on every page change) over % fallback
+      const savedPage = parseInt(localStorage.getItem(`tome_pg_${book.id}`) || '', 10)
+      if (!isNaN(savedPage) && savedPage > 0) {
+        setOffset(Math.max(0, Math.min(savedPage * ph, th - ph)))
+      } else if (initialProgress > 0) {
+        const target = Math.round((initialProgress / 100) * (th - ph))
+        const snapped = Math.round(target / ph) * ph
+        setOffset(Math.max(0, Math.min(snapped, th - ph)))
+      }
     }
-  }, [initialProgress])
+  }, [book.id, initialProgress])
 
   useEffect(() => {
     if (!fullText) return
@@ -126,11 +136,12 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     return () => ro.disconnect()
   }, [measure])
 
-  // Save progress
+  // Save progress — store both percentage (for API/display) and exact page index (for accurate restore)
   useEffect(() => {
     if (!pageH || !totalH) return
     const pct = Math.round((offset / Math.max(totalH - pageH, 1)) * 100)
     setProgress(book.id, Math.min(100, Math.max(0, pct)))
+    localStorage.setItem(`tome_pg_${book.id}`, String(Math.floor(offset / pageH)))
   }, [offset, pageH, totalH])
 
   // Android back button
@@ -188,8 +199,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     // Cylindrical surface shading: paper curves away from viewer.
     // Left edge of fold (crease) faces viewer → bright; right edge curves away → dark.
     const angle    = progress * Math.PI / 2         // 0 → π/2
-    const curveDark  = (1 - Math.cos(angle)) * 0.62  // 0 at flat, 0.62 at edge-on
-    const curveLight = Math.cos(angle) * 0.08        // subtle crease highlight
+    const curveDark  = (1 - Math.cos(angle)) * 0.85  // 0 at flat, 0.85 at edge-on
+    const curveLight = Math.cos(angle) * 0.30        // crease highlight
     if (foldOverlay) {
       const grad = dir === 'fwd'
         ? `linear-gradient(to right, rgba(255,255,255,${curveLight.toFixed(3)}) 0%, rgba(0,0,0,${curveDark.toFixed(3)}) 100%)`
@@ -209,8 +220,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       fold.style.left            = `${foldX}px`
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '0% 50%'
-      // perspective(400px): tighter vanishing point = more dramatic compression as paper curls
-      fold.style.transform       = `perspective(400px) rotateY(${-progress * 90}deg)`
+      fold.style.transform       = `perspective(1200px) rotateY(${-progress * 90}deg)`
       fold.style.filter          = 'none'
       fold.style.opacity         = progress > 0.005 ? '1' : '0'
 
@@ -232,7 +242,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       fold.style.left            = '0'
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '100% 50%'
-      fold.style.transform       = `perspective(400px) rotateY(${progress * 90}deg)`
+      fold.style.transform       = `perspective(1200px) rotateY(${progress * 90}deg)`
       fold.style.filter          = 'none'
       fold.style.opacity         = progress > 0.005 ? '1' : '0'
 
@@ -306,7 +316,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     setBackLayerOffset(next)
     dragRef.current = { dir, startX: dir === 'fwd' ? w : 0, lastX: 0 }
 
-    animateFold(dir, 0, 1, 960, () => {
+    animateFold(dir, 0, 1, 280, () => {
       dragRef.current    = null
       pendingReset.current = true
       setOffset(next)   // triggers re-render → useLayoutEffect resets clips
@@ -315,21 +325,21 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
 
   // Finish a touch drag — snap to complete or abort
   const finishDrag = useCallback((dir, progress) => {
-    const THRESHOLD = 0.27
+    const THRESHOLD = 0.20
     const curOff = offsetRef.current
     const ph     = pageHRef.current
     const maxOff = Math.max(0, totalHRef.current - ph)
 
     if (progress >= THRESHOLD) {
       const next = dir === 'fwd' ? Math.min(curOff + ph, maxOff) : Math.max(curOff - ph, 0)
-      const dur  = Math.max(250, (1 - progress) * 960)
+      const dur  = Math.max(120, (1 - progress) * 280)
       animateFold(dir, progress, 1, dur, () => {
         dragRef.current      = null
         pendingReset.current = true
         setOffset(next)
       })
     } else {
-      const dur = Math.max(180, progress * 600)
+      const dur = Math.max(80, progress * 240)
       animateFold(dir, progress, 0, dur, () => {
         dragRef.current = null
         resetDragVisuals()
