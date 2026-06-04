@@ -679,13 +679,19 @@ input, textarea { font-family: inherit; }
   z-index: 3;
   overflow: hidden;
   opacity: 0;
-  /* shadow set dynamically in applyDragVisuals */
+  /* Hides automatically when rotated past 90° — no JS needed for that transition */
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  /* Promote to GPU layer for smooth compositing */
   will-change: transform, width, opacity, left, filter;
+  transform-style: preserve-3d;
 }
 .page-paper-fold {
   position: absolute !important;
   top: 0; bottom: 0;
   left: 0; right: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 .page-text-fold {
   position: absolute !important;

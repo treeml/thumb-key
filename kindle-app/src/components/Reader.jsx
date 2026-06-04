@@ -79,6 +79,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const showChromeRef  = useRef(false)
   const chromeTimerRef = useRef(null)
   const pendingTurnRef = useRef(null)  // { dir, startX, startY } — intent not yet confirmed
+  const lastSelRef     = useRef(null)  // last valid selection text (survives tap-to-dismiss)
+  const lastSelPosRef  = useRef(null)  // bounding rect centre of last selection
 
   const { highlights, addHighlight, removeHighlight } = useHighlights(book.id)
 
@@ -204,14 +206,36 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     return () => { try { handle?.remove() } catch {} }
   }, [showToc, showMenu, showHighlightPanel, showRecs, dictWord, onBack])
 
-  // Selection tracking for highlight button
+  // Selection tracking: drives highlight button AND auto-dictionary on single-word select.
+  // On Android WebView, onClick does NOT fire after a long-press selection, so we must
+  // detect dictionary intent here rather than in handleTextClick.
   useEffect(() => {
-    const update = () => {
-      const sel = window.getSelection()?.toString().trim()
-      setHasSelection(!!(sel && sel.length > 1))
+    let timer = null
+    const onSelChange = () => {
+      clearTimeout(timer)
+      const sel  = window.getSelection()
+      const text = sel?.toString().trim()
+      const valid = !!(text && text.length > 1)
+      setHasSelection(valid)
+      if (valid) {
+        try {
+          const rect = sel.getRangeAt(0).getBoundingClientRect()
+          lastSelRef.current    = text
+          lastSelPosRef.current = { x: rect.left + rect.width / 2, y: rect.bottom }
+        } catch {}
+        // Auto-show dictionary after a brief pause for single-word selections
+        if (text.split(/\s+/).length <= 2) {
+          timer = setTimeout(() => {
+            if (window.getSelection()?.toString().trim() === text) {
+              setDictWord(text)
+              setDictPos(lastSelPosRef.current)
+            }
+          }, 350)
+        }
+      }
     }
-    document.addEventListener('selectionchange', update)
-    return () => document.removeEventListener('selectionchange', update)
+    document.addEventListener('selectionchange', onSelChange)
+    return () => { document.removeEventListener('selectionchange', onSelChange); clearTimeout(timer) }
   }, [])
 
   const maxOffset = Math.max(0, totalH - pageH)
@@ -237,43 +261,42 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const dr     = dragRef.current
     const sx     = dr?.startX ?? (dir === 'fwd' ? w : 0)
 
-    // Surface lighting math: as the page rotates away, it darkens (less face-on)
-    const angle = progress * 90           // 0 = flat, 90 = edge-on (invisible)
-    const rad   = angle * Math.PI / 180
-    const shade = Math.sin(rad) * 0.52   // darkening as face rotates away from viewer
-    const glint = Math.max(0, Math.cos(rad) * 0.10 - 0.02)  // subtle highlight near flat
+    // Cylindrical lighting model:
+    //   Real paper curves into a cylinder. The apex (midpoint of fold) faces the viewer
+    //   directly = brightest point. Both edges face sideways = darkest.
+    //   sin(2θ) peaks at 45° → used for the apex highlight.
+    //   sin(θ)  peaks at 90° → used for the edge darkening.
+    const angle   = progress * 90
+    const rad     = angle * Math.PI / 180
+    const darkEdge = Math.sin(rad) * 0.42            // edges darken as they face sideways
+    const apexGlow = Math.sin(2 * rad) * 0.22        // apex brightens, peaks at 45° turn
+    const persp    = Math.round(w * 1.6)             // tighter perspective = stronger 3D
 
     if (dir === 'fwd') {
-      // Crease starts at the finger (sx) and sweeps left to 0
       const creaseX = sx * (1 - progress)
-      // The fold covers the ENTIRE right portion — from the crease to the right edge.
-      // This is what makes it look like a real page folding, not a narrow strip.
-      const foldW = w - creaseX
+      const foldW   = w - creaseX
 
-      // Front: flat remaining old page, left of crease
       front.style.clipPath = creaseX > 0.5
         ? `polygon(0 0, ${creaseX}px 0, ${creaseX}px 100%, 0 100%)`
         : 'polygon(0 0, 0 0, 0 100%, 0 100%)'
 
-      // Fold: old page right portion curling backward around the crease.
-      // transformOrigin = left edge (the crease line), rotateY folds the right edge away.
       fold.style.left            = `${creaseX}px`
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '0% 50%'
-      fold.style.transform       = `perspective(${w * 3}px) rotateY(${angle}deg)`
+      fold.style.transform       = `perspective(${persp}px) rotateY(${angle}deg)`
       fold.style.opacity         = progress < 0.99 ? '1' : '0'
-      // Drop shadow falls left of crease onto the revealed new page
-      fold.style.filter          = progress > 0.02
-        ? `drop-shadow(-10px 0 20px rgba(0,0,0,${(0.40 * progress).toFixed(2)}))`
-        : 'none'
+      // Shadow grows as page lifts; constant string avoids per-frame style invalidation
+      fold.style.filter          = progress > 0.03 ? 'drop-shadow(-10px 0 18px rgba(0,0,0,0.32))' : 'none'
 
-      // Gradient: left edge (crease) has a glint, right edge darkens as it rotates away
+      // Cylindrical gradient: dark at crease edge → bright at apex (42%) → dark at far edge
       if (foldOverlay) {
-        foldOverlay.style.background = `linear-gradient(to right, rgba(255,255,255,${glint.toFixed(3)}) 0%, rgba(0,0,0,${shade.toFixed(3)}) 100%)`
-        foldOverlay.style.opacity    = '1'
+        foldOverlay.style.background = `linear-gradient(to right,
+          rgba(0,0,0,${darkEdge.toFixed(3)}) 0%,
+          rgba(255,255,255,${apexGlow.toFixed(3)}) 42%,
+          rgba(0,0,0,${(darkEdge * 0.60).toFixed(3)}) 100%)`
+        foldOverlay.style.opacity = '1'
       }
 
-      // Offset content inside fold to show the right portion of the old page
       if (foldInner) {
         foldInner.style.transform = `translateY(-${curOff}px)`
         foldInner.style.left      = `-${creaseX}px`
@@ -282,42 +305,35 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
         if (col) foldInner.style.color = col
       }
 
-      // Crease highlight on left edge of fold (light bouncing off the paper crease)
       if (foldCreaseRef.current) {
-        foldCreaseRef.current.style.left             = '0'
-        foldCreaseRef.current.style.right            = 'auto'
-        foldCreaseRef.current.style.backgroundImage  = 'linear-gradient(90deg, rgba(255,255,255,0.70) 0%, transparent 6px)'
+        foldCreaseRef.current.style.left  = '0'
+        foldCreaseRef.current.style.right = 'auto'
+        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(90deg, rgba(255,255,255,0.70) 0%, transparent 5px)'
       }
 
     } else {
-      // Backward: crease starts at finger (sx) and sweeps right to w
       const creaseX = sx + (w - sx) * progress
-      // The fold covers the left portion — from 0 to the crease
-      const foldW = creaseX
+      const foldW   = creaseX
 
-      // Front: flat remaining old page, right of crease
       front.style.clipPath = creaseX < w - 0.5
         ? `polygon(${creaseX}px 0, 100% 0, 100% 100%, ${creaseX}px 100%)`
         : 'polygon(100% 0, 100% 0, 100% 100%, 100% 100%)'
 
-      // Fold: old page LEFT portion curling backward around the crease.
-      // transformOrigin = right edge (the crease line), rotateY folds the left edge away.
       fold.style.left            = '0px'
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '100% 50%'
-      fold.style.transform       = `perspective(${w * 3}px) rotateY(${-angle}deg)`
+      fold.style.transform       = `perspective(${persp}px) rotateY(${-angle}deg)`
       fold.style.opacity         = progress < 0.99 ? '1' : '0'
-      // Drop shadow falls right of crease
-      fold.style.filter          = progress > 0.02
-        ? `drop-shadow(10px 0 20px rgba(0,0,0,${(0.40 * progress).toFixed(2)}))`
-        : 'none'
+      fold.style.filter          = progress > 0.03 ? 'drop-shadow(10px 0 18px rgba(0,0,0,0.32))' : 'none'
 
       if (foldOverlay) {
-        foldOverlay.style.background = `linear-gradient(to left, rgba(255,255,255,${glint.toFixed(3)}) 0%, rgba(0,0,0,${shade.toFixed(3)}) 100%)`
-        foldOverlay.style.opacity    = '1'
+        foldOverlay.style.background = `linear-gradient(to left,
+          rgba(0,0,0,${darkEdge.toFixed(3)}) 0%,
+          rgba(255,255,255,${apexGlow.toFixed(3)}) 42%,
+          rgba(0,0,0,${(darkEdge * 0.60).toFixed(3)}) 100%)`
+        foldOverlay.style.opacity = '1'
       }
 
-      // Content starts at 0 — shows the left portion of old page through the fold width
       if (foldInner) {
         foldInner.style.transform = `translateY(-${curOff}px)`
         foldInner.style.left      = '0px'
@@ -327,9 +343,9 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       }
 
       if (foldCreaseRef.current) {
-        foldCreaseRef.current.style.left             = 'auto'
-        foldCreaseRef.current.style.right            = '0'
-        foldCreaseRef.current.style.backgroundImage  = 'linear-gradient(-90deg, rgba(255,255,255,0.70) 0%, transparent 6px)'
+        foldCreaseRef.current.style.left  = 'auto'
+        foldCreaseRef.current.style.right = '0'
+        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(-90deg, rgba(255,255,255,0.70) 0%, transparent 5px)'
       }
     }
 
@@ -382,7 +398,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const start = performance.now()
     const tick  = (now) => {
       const t = Math.min(1, (now - start) / duration)
-      const e = 1 - Math.pow(1 - t, 3)  // ease-out cubic — snappier than quart
+      const e = 1 - Math.pow(1 - t, 4)  // ease-out quart — snappy natural feel
       applyDragVisuals(dir, fromP + (toP - fromP) * e)
       if (t < 1) requestAnimationFrame(tick)
       else onDone?.()
@@ -405,7 +421,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     setBackLayerOffset(next)
     dragRef.current = { dir, startX: dir === 'fwd' ? w : 0, lastX: 0 }
 
-    animateFold(dir, 0, 1, 280, () => {
+    animateFold(dir, 0, 1, 360, () => {
       dragRef.current    = null
       pendingReset.current = true
       setOffset(next)   // triggers re-render → useLayoutEffect resets clips
@@ -564,13 +580,23 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
 
   const handleTextClick = (e) => {
     if (e.target.closest('.reader-menu,.highlights-panel,.recs-panel,.dictionary-popup')) return
-    const sel = window.getSelection()?.toString().trim()
-    if (sel && sel.length > 1 && sel.split(' ').length <= 5) {
-      const rect = window.getSelection().getRangeAt(0).getBoundingClientRect()
-      setDictWord(sel)
-      setDictPos({ x: rect.left + rect.width / 2, y: rect.bottom })
+    // Live selection takes priority; fall back to the last stored selection (survives tap-dismiss)
+    const live = window.getSelection()?.toString().trim()
+    const word = (live && live.length > 1 && live.split(/\s+/).length <= 5) ? live
+      : (lastSelRef.current && lastSelRef.current.split(/\s+/).length <= 5 ? lastSelRef.current : null)
+    if (word) {
+      let pos = lastSelPosRef.current
+      if (live && live.length > 1) {
+        try {
+          const r = window.getSelection().getRangeAt(0).getBoundingClientRect()
+          pos = { x: r.left + r.width / 2, y: r.bottom }
+        } catch {}
+      }
+      setDictWord(word)
+      setDictPos(pos || null)
     } else {
       setDictWord(null)
+      lastSelRef.current = null
     }
   }
 
