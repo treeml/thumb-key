@@ -648,7 +648,7 @@ input, textarea { font-family: inherit; }
   .page-text-inner { padding: 20px 18px; }
 }
 
-/* ── 3D fold element — the turning portion of the current page ── */
+/* ── 3D fold element — narrow curl strip that peels across the page ── */
 .page-fold {
   position: absolute;
   top: 0; bottom: 0;
@@ -656,7 +656,9 @@ input, textarea { font-family: inherit; }
   z-index: 3;
   overflow: hidden;
   opacity: 0;
-  will-change: transform, width, opacity, left;
+  /* Cast a soft shadow onto the back (next/prev) page for depth */
+  filter: drop-shadow(0 0 18px rgba(0,0,0,0.28));
+  will-change: transform, width, opacity, left, filter;
 }
 .page-paper-fold {
   position: absolute !important;
@@ -679,8 +681,8 @@ input, textarea { font-family: inherit; }
 
 /* Sharp bright highlight at the fold crease — light reflecting off the paper crease point */
 .fold-crease-highlight {
-  position: absolute; top: 0; bottom: 0; left: 0; width: 6px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.08) 60%, transparent 100%);
+  position: absolute; top: 0; bottom: 0; left: 0; width: 4px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.12) 70%, transparent 100%);
   pointer-events: none; z-index: 10;
 }
 

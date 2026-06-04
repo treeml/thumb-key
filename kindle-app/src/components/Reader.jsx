@@ -59,9 +59,10 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const frontInnerRef = useRef(null)  // current page text div (height measurement)
   const backLayerRef  = useRef(null)  // revealed page layer (always full-width, behind)
   const backInnerRef  = useRef(null)  // revealed page text div (transform set via DOM)
-  const foldRef       = useRef(null)  // 3-D fold element (the turning portion)
-  const foldInnerRef  = useRef(null)  // text div inside the fold element
-  const foldOverlayRef = useRef(null) // gradient overlay that simulates cylindrical curvature
+  const foldRef        = useRef(null)  // 3-D fold element (the turning portion)
+  const foldInnerRef   = useRef(null)  // text div inside the fold element
+  const foldOverlayRef = useRef(null)  // gradient overlay that simulates cylindrical curvature
+  const foldCreaseRef  = useRef(null)  // crease highlight (repositioned per turn direction)
 
   // Value refs — let event handlers read current values without stale closures
   const offsetRef      = useRef(0)
@@ -233,27 +234,21 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const fs     = fontSizeRef.current
     const col    = pageColorRef.current?.text || ''
 
-    // Anchor fold crease to touch start so the crease follows the finger exactly.
-    // foldX = sx*(1-p) for fwd → at any moment foldX === currentX of finger.
     const dr = dragRef.current
     const sx = dr?.startX ?? (dir === 'fwd' ? w : 0)
 
-    // Cylindrical surface shading: paper curves away from viewer.
-    // Left edge of fold (crease) faces viewer → bright; right edge curves away → dark.
-    const angle    = progress * Math.PI / 2         // 0 → π/2
-    const curveDark  = (1 - Math.cos(angle)) * 0.85  // 0 at flat, 0.85 at edge-on
-    const curveLight = Math.cos(angle) * 0.30        // crease highlight
-    if (foldOverlay) {
-      const grad = dir === 'fwd'
-        ? `linear-gradient(to right, rgba(255,255,255,${curveLight.toFixed(3)}) 0%, rgba(0,0,0,${curveDark.toFixed(3)}) 100%)`
-        : `linear-gradient(to left,  rgba(255,255,255,${curveLight.toFixed(3)}) 0%, rgba(0,0,0,${curveDark.toFixed(3)}) 100%)`
-      foldOverlay.style.background = grad
-      foldOverlay.style.opacity    = progress > 0.005 ? '1' : '0'
-    }
+    // Narrow curl strip — the key to paper-like feel.
+    // The strip is ~70px wide max; the back (next/prev page) shows through the gap.
+    const CURL_W = Math.max(48, Math.min(72, w * 0.16))
+
+    // Bell-curve highlight (peaks at mid-turn) + sin-based shadow (grows toward edge-on)
+    const angle      = progress * Math.PI / 2
+    const curveLight = progress * (1 - progress) * 4 * 0.50   // 0 → peaks → 0
+    const curveDark  = Math.sin(angle) * 0.78                   // 0 → grows → max at edge-on
 
     if (dir === 'fwd') {
       const foldX = sx * (1 - progress)
-      const foldW = Math.max(0, w - foldX)
+      const foldW = Math.min(w - foldX, CURL_W)
 
       front.style.clipPath = foldX > 0
         ? `polygon(0 0,${foldX}px 0,${foldX}px 100%,0 100%)`
@@ -262,9 +257,14 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       fold.style.left            = `${foldX}px`
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '0% 50%'
-      fold.style.transform       = `perspective(1200px) rotateY(${-progress * 90}deg)`
+      fold.style.transform       = `perspective(500px) rotateY(${-progress * 90}deg)`
       fold.style.filter          = 'none'
       fold.style.opacity         = progress > 0.005 ? '1' : '0'
+
+      if (foldOverlay) {
+        foldOverlay.style.background = `linear-gradient(to right, rgba(255,255,255,${curveLight.toFixed(3)}) 0%, rgba(0,0,0,${curveDark.toFixed(3)}) 100%)`
+        foldOverlay.style.opacity    = progress > 0.005 ? '1' : '0'
+      }
 
       if (foldInner) {
         foldInner.style.transform = `translateY(-${curOff}px)`
@@ -275,25 +275,46 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       }
 
     } else {
-      const foldW = Math.max(0, sx + progress * (w - sx))
+      // Backward: narrow strip sweeps left→right, revealing previous page on the left
+      const foldX    = progress * (w - CURL_W)
+      const foldW    = CURL_W
+      const foldRight = foldX + foldW
 
-      front.style.clipPath = foldW < w
-        ? `polygon(${foldW}px 0,100% 0,100% 100%,${foldW}px 100%)`
+      front.style.clipPath = foldRight < w
+        ? `polygon(${foldRight}px 0, 100% 0, 100% 100%, ${foldRight}px 100%)`
         : 'polygon(100% 0,100% 0,100% 100%,100% 100%)'
 
-      fold.style.left            = '0'
+      fold.style.left            = `${foldX}px`
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '100% 50%'
-      fold.style.transform       = `perspective(1200px) rotateY(${progress * 90}deg)`
+      fold.style.transform       = `perspective(500px) rotateY(${progress * 90}deg)`
       fold.style.filter          = 'none'
       fold.style.opacity         = progress > 0.005 ? '1' : '0'
 
+      if (foldOverlay) {
+        foldOverlay.style.background = `linear-gradient(to left, rgba(255,255,255,${curveLight.toFixed(3)}) 0%, rgba(0,0,0,${curveDark.toFixed(3)}) 100%)`
+        foldOverlay.style.opacity    = progress > 0.005 ? '1' : '0'
+      }
+
       if (foldInner) {
         foldInner.style.transform = `translateY(-${curOff}px)`
-        foldInner.style.left      = '0'
+        foldInner.style.left      = `-${foldX}px`
         foldInner.style.width     = `${w}px`
         foldInner.style.fontSize  = `${fs}px`
         if (col) foldInner.style.color = col
+      }
+    }
+
+    // Crease highlight: always at the hinge edge (left for fwd, right for bck)
+    if (foldCreaseRef.current) {
+      if (dir === 'fwd') {
+        foldCreaseRef.current.style.left  = '0'
+        foldCreaseRef.current.style.right = ''
+        foldCreaseRef.current.style.backgroundImage = ''
+      } else {
+        foldCreaseRef.current.style.right = '0'
+        foldCreaseRef.current.style.left  = ''
+        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(-90deg, rgba(255,255,255,0.50) 0%, rgba(255,255,255,0.08) 60%, transparent 100%)'
       }
     }
 
@@ -346,7 +367,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const start = performance.now()
     const tick  = (now) => {
       const t = Math.min(1, (now - start) / duration)
-      const e = 1 - Math.pow(1 - t, 4)  // ease-out quart
+      const e = 1 - Math.pow(1 - t, 3)  // ease-out cubic — snappier than quart
       applyDragVisuals(dir, fromP + (toP - fromP) * e)
       if (t < 1) requestAnimationFrame(tick)
       else onDone?.()
@@ -448,9 +469,12 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const ph     = pageHRef.current
     const maxOff = Math.max(0, totalHRef.current - ph)
 
+    // Only the outer 20% of the screen triggers page turns.
+    // The middle 60% is free for text selection and highlighting.
+    const EDGE = 0.20
     let dir = null
-    if (x > w * 0.5 && curOff < maxOff) dir = 'fwd'
-    else if (x <= w * 0.5 && curOff > 0) dir = 'bck'
+    if (x > w * (1 - EDGE) && curOff < maxOff) dir = 'fwd'
+    else if (x < w * EDGE && curOff > 0) dir = 'bck'
     if (!dir) return
 
     const backOff = dir === 'fwd'
@@ -691,7 +715,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
           {/* Cylindrical shading: gradient simulates curved paper surface */}
           <div className="fold-curl-overlay" ref={foldOverlayRef} />
           {/* Bright highlight at the crease — like light reflecting off a sharp paper fold */}
-          <div className="fold-crease-highlight" />
+          <div className="fold-crease-highlight" ref={foldCreaseRef} />
         </div>
 
       </div>
