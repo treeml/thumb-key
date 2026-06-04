@@ -32,7 +32,7 @@ function bookPalette(id) { const n = hashId(id); return SPINE_PALETTES[n % SPINE
 function bookH(id)  { const n = hashId(id); return 130 + (n * 17 + 13) % 65 }
 function bookW(id)  { const n = hashId(id); return 24  + (n * 7  +  5) % 16 }
 
-function SpineBook({ book, progress, onTap, isActive }) {
+function SpineBook({ book, progress, onTap, onLongPress, isActive }) {
   const pal = bookPalette(book.id)
   const h   = bookH(book.id)
   const w   = bookW(book.id)
@@ -42,11 +42,33 @@ function SpineBook({ book, progress, onTap, isActive }) {
     ? `linear-gradient(to top, ${pal.read} 0%, ${pal.read} ${pct}%, ${pal.base} ${pct}%, ${pal.base} 100%)`
     : pal.base
 
+  const holdTimer = useRef(null)
+  const didLongPress = useRef(false)
+
+  const handleTouchStart = (e) => {
+    didLongPress.current = false
+    holdTimer.current = setTimeout(() => {
+      didLongPress.current = true
+      onLongPress(book)
+    }, 600)
+  }
+  const cancelHold = () => { clearTimeout(holdTimer.current) }
+  const handleTouchEnd = () => {
+    cancelHold()
+  }
+  const handleClick = () => {
+    if (didLongPress.current) return
+    onTap(book)
+  }
+
   return (
     <div
       className={`lib-spine-book${isActive ? ' lib-spine-active' : ''}`}
       style={{ height: h, width: w }}
-      onClick={() => onTap(book)}
+      onClick={handleClick}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={cancelHold}
       role="button"
       aria-label={book.title}
     >
@@ -185,14 +207,30 @@ function BookOpenOverlay({ book, progress }) {
   )
 }
 
-export default function Library({ myLibrary, getProgress, onBack, onRead, nightMode }) {
+export default function Library({ myLibrary, getProgress, onBack, onRead, removeBook, nightMode }) {
   const [phase, setPhase]           = useState('shelf')
   const [activeBook, setActiveBook] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)  // book to confirm-delete
 
   const handleTapBook = useCallback((book) => {
     setActiveBook(book)
     setPhase('hovering')
   }, [])
+
+  const handleLongPress = useCallback((book) => {
+    setDeleteTarget(book)
+  }, [])
+
+  const confirmDelete = useCallback(() => {
+    if (!deleteTarget) return
+    removeBook(deleteTarget.id)
+    // Clean up exact-page-index from localStorage too
+    localStorage.removeItem(`tome_pg_${deleteTarget.id}`)
+    setDeleteTarget(null)
+    // Close hover card if it was this book
+    setPhase('shelf')
+    setActiveBook(null)
+  }, [deleteTarget, removeBook])
 
   const handleOpen = useCallback(() => {
     setPhase('opening')
@@ -227,6 +265,20 @@ export default function Library({ myLibrary, getProgress, onBack, onRead, nightM
         />
       )}
 
+      {deleteTarget && (
+        <div className="lib-delete-backdrop" onClick={() => setDeleteTarget(null)}>
+          <div className="lib-delete-modal" onClick={e => e.stopPropagation()}>
+            <div className="lib-delete-title">Remove book?</div>
+            <div className="lib-delete-book-name">"{deleteTarget.title}"</div>
+            <div className="lib-delete-hint">This removes it from your library. Your reading progress will be lost.</div>
+            <div className="lib-delete-btns">
+              <button className="lib-delete-cancel" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button className="lib-delete-confirm" onClick={confirmDelete}>Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="library-topbar">
         <button className="back-btn" onClick={onBack}>← Browse</button>
         <h1 className="library-heading">My Library</h1>
@@ -254,6 +306,7 @@ export default function Library({ myLibrary, getProgress, onBack, onRead, nightM
                       book={book}
                       progress={getProgress(book.id)}
                       onTap={handleTapBook}
+                      onLongPress={handleLongPress}
                       isActive={activeBook?.id === book.id && phase !== 'shelf'}
                     />
                   ))}

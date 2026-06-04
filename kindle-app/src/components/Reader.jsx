@@ -71,14 +71,16 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const dragRef        = useRef(null)  // { dir, startX, lastX } | null
   const pendingReset   = useRef(false) // set true when we need resetDragVisuals after React commit
 
-  const hasRestored = useRef(false)
+  const hasRestored    = useRef(false)
+  const paddingTopRef  = useRef(20)   // measured from DOM; updated in measure()
+  const lineHRef       = useRef(33)   // fontSize * 1.85, rounded
 
   const { highlights, addHighlight, removeHighlight } = useHighlights(book.id)
 
   useEffect(() => { offsetRef.current = offset }, [offset])
   useEffect(() => { pageHRef.current = pageH }, [pageH])
   useEffect(() => { totalHRef.current = totalH }, [totalH])
-  useEffect(() => { fontSizeRef.current = fontSize }, [fontSize])
+  useEffect(() => { fontSizeRef.current = fontSize; lineHRef.current = Math.round(fontSize * 1.85) }, [fontSize])
   useEffect(() => { pageColorRef.current = pageColor }, [pageColor])
   useEffect(() => { localStorage.setItem('tome_page_color', pageColorId) }, [pageColorId])
   useEffect(() => { localStorage.setItem('tome_font_size', String(fontSize)) }, [fontSize])
@@ -106,20 +108,26 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   // Measure using the page LAYER (not wrap) so padding is excluded
   const measure = useCallback(() => {
     if (!frontLayerRef.current || !frontInnerRef.current) return
-    const ph = frontLayerRef.current.clientHeight   // ← page layer, not wrap
-    const th = frontInnerRef.current.scrollHeight
+    const rawPh = frontLayerRef.current.clientHeight   // ← page layer, not wrap
+    const th    = frontInnerRef.current.scrollHeight
+    // Read actual padding-top from DOM so we can snap to real line boundaries
+    const pt   = parseFloat(getComputedStyle(frontInnerRef.current).paddingTop) || 20
+    const lineH = Math.round(fontSizeRef.current * 1.85)
+    paddingTopRef.current = pt
+    lineHRef.current      = lineH
+    // Snap page height to an integer number of lines so turns never land mid-line
+    const ph = Math.max(lineH, Math.floor(rawPh / lineH) * lineH)
     setPageH(ph)
     setTotalH(th)
     if (!hasRestored.current && ph > 0) {
       hasRestored.current = true
-      // Prefer exact page index (written on every page change) over % fallback
+      const snapLine = (raw) => raw <= 0 ? 0 : pt + Math.floor(Math.max(0, raw - pt) / lineH) * lineH
       const savedPage = parseInt(localStorage.getItem(`tome_pg_${book.id}`) || '', 10)
       if (!isNaN(savedPage) && savedPage > 0) {
-        setOffset(Math.max(0, Math.min(savedPage * ph, th - ph)))
+        setOffset(snapLine(Math.min(savedPage * ph, th - ph)))
       } else if (initialProgress > 0) {
         const target = Math.round((initialProgress / 100) * (th - ph))
-        const snapped = Math.round(target / ph) * ph
-        setOffset(Math.max(0, Math.min(snapped, th - ph)))
+        setOffset(snapLine(Math.max(0, Math.min(target, th - ph))))
       }
     }
   }, [book.id, initialProgress])
@@ -279,6 +287,16 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     }
   }, [offset, resetDragVisuals])
 
+  // Snap a raw pixel offset to the nearest line boundary at or below it,
+  // ensuring the first visible line is never partially clipped.
+  const snapLine = useCallback((raw) => {
+    const pt  = paddingTopRef.current
+    const lh  = lineHRef.current
+    if (raw <= 0) return 0
+    if (raw <= pt) return 0
+    return pt + Math.floor((raw - pt) / lh) * lh
+  }, [])
+
   // Set the back layer's scroll offset directly on the DOM
   const setBackLayerOffset = useCallback((off) => {
     if (backInnerRef.current) {
@@ -311,7 +329,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     if (dir === 'fwd' && curOff >= maxOff) return
     if (dir === 'bck' && curOff <= 0) return
 
-    const next = dir === 'fwd' ? Math.min(curOff + ph, maxOff) : Math.max(curOff - ph, 0)
+    const rawNext = dir === 'fwd' ? Math.min(curOff + ph, maxOff) : Math.max(curOff - ph, 0)
+    const next = snapLine(rawNext)
     const w = wrapRef.current?.offsetWidth || window.innerWidth
     setBackLayerOffset(next)
     dragRef.current = { dir, startX: dir === 'fwd' ? w : 0, lastX: 0 }
@@ -321,7 +340,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       pendingReset.current = true
       setOffset(next)   // triggers re-render → useLayoutEffect resets clips
     })
-  }, [animateFold, setBackLayerOffset])
+  }, [animateFold, setBackLayerOffset, snapLine])
 
   // Finish a touch drag — snap to complete or abort
   const finishDrag = useCallback((dir, progress) => {
@@ -331,7 +350,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const maxOff = Math.max(0, totalHRef.current - ph)
 
     if (progress >= THRESHOLD) {
-      const next = dir === 'fwd' ? Math.min(curOff + ph, maxOff) : Math.max(curOff - ph, 0)
+      const rawNext = dir === 'fwd' ? Math.min(curOff + ph, maxOff) : Math.max(curOff - ph, 0)
+      const next = snapLine(rawNext)
       const dur  = Math.max(120, (1 - progress) * 280)
       animateFold(dir, progress, 1, dur, () => {
         dragRef.current      = null
@@ -345,7 +365,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
         resetDragVisuals()
       })
     }
-  }, [animateFold, resetDragVisuals])
+  }, [animateFold, resetDragVisuals, snapLine])
 
   // Non-passive touchmove listener attached imperatively (must preventDefault)
   useEffect(() => {

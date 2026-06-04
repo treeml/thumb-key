@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import Bookshelf    from './components/Bookshelf'
 import BookDetail   from './components/BookDetail'
 import Reader       from './components/Reader'
@@ -24,6 +24,8 @@ export default function App() {
   const [returnView,   setReturnView]   = useState('shelf')
   const [nightMode,    setNightMode]    = useState(() => localStorage.getItem('tome_night') === 'true')
 
+  const shelfScrollY = useRef(0)
+
   const { books: myLibrary, addBook, removeBook, hasBook, setProgress, getProgress } = useLibrary()
   const { books: audioBooks, addAudiobook, removeAudiobook, setPosition, library: audioLib } = useAudiobooks()
 
@@ -33,6 +35,7 @@ export default function App() {
   }, [nightMode])
 
   const handleSelectBook = useCallback((book) => {
+    if (view === 'shelf') shelfScrollY.current = window.scrollY
     setReturnView(view)
     setSelectedBook(book)
     setView('detail')
@@ -45,8 +48,12 @@ export default function App() {
   }, [addBook])
 
   const handleBackFromDetail = useCallback(() => {
+    const dest = returnView || 'shelf'
     setSelectedBook(null)
-    setView(returnView || 'shelf')
+    setView(dest)
+    if (dest === 'shelf') {
+      requestAnimationFrame(() => window.scrollTo(0, shelfScrollY.current))
+    }
   }, [returnView])
 
   const handleBackFromReader = useCallback((newBook) => {
@@ -153,6 +160,7 @@ export default function App() {
             getProgress={getProgress}
             onBack={() => setView('shelf')}
             onRead={handleRead}
+            removeBook={removeBook}
             nightMode={nightMode}
           />
         )}

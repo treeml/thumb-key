@@ -1551,6 +1551,54 @@ input, textarea { font-family: inherit; }
 .lib-hover-hint-sep { color: #3a2820; }
 .lib-hover-hint-back { color: #5a4535; }
 
+/* ── Long-press delete confirmation ── */
+.lib-delete-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,0.55);
+  display: flex; align-items: center; justify-content: center;
+}
+.lib-delete-modal {
+  background: #fdf6e3;
+  border-radius: 16px;
+  padding: 28px 24px 20px;
+  width: min(320px, 88vw);
+  display: flex; flex-direction: column; gap: 10px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+}
+.night .lib-delete-modal { background: #1e1408; }
+.lib-delete-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 20px; font-weight: 700;
+  color: #2c1a06;
+}
+.night .lib-delete-title { color: #d4b896; }
+.lib-delete-book-name {
+  font-size: 14px; color: #7a5a30;
+  font-style: italic; line-height: 1.4;
+}
+.night .lib-delete-book-name { color: #a08050; }
+.lib-delete-hint {
+  font-size: 12px; color: #9a7a50; line-height: 1.5;
+}
+.lib-delete-btns {
+  display: flex; gap: 10px; margin-top: 8px;
+}
+.lib-delete-cancel {
+  flex: 1; padding: 11px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(0,0,0,0.15);
+  background: transparent;
+  font-size: 14px; font-weight: 600; color: #7a5a30;
+  cursor: pointer;
+}
+.lib-delete-confirm {
+  flex: 1; padding: 11px;
+  border-radius: 10px;
+  background: #922B21; color: #fff;
+  font-size: 14px; font-weight: 700;
+  border: none; cursor: pointer;
+}
+
 /* ── Book open overlay ── */
 .lib-open-overlay {
   position: fixed;
