@@ -671,7 +671,7 @@ input, textarea { font-family: inherit; }
   .page-text-inner { padding: 20px 18px; }
 }
 
-/* ── 3D fold element — narrow curl strip that peels across the page ── */
+/* ── 3D fold element — covers the full turning portion of the page ── */
 .page-fold {
   position: absolute;
   top: 0; bottom: 0;
@@ -679,15 +679,13 @@ input, textarea { font-family: inherit; }
   z-index: 3;
   overflow: hidden;
   opacity: 0;
-  /* Cast a soft shadow onto the back (next/prev) page for depth */
-  filter: drop-shadow(0 0 18px rgba(0,0,0,0.28));
+  /* shadow set dynamically in applyDragVisuals */
   will-change: transform, width, opacity, left, filter;
 }
 .page-paper-fold {
   position: absolute !important;
   top: 0; bottom: 0;
-  left: 0;
-  /* width set via foldInnerRef DOM */
+  left: 0; right: 0;
 }
 .page-text-fold {
   position: absolute !important;

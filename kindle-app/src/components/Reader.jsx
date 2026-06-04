@@ -230,91 +230,106 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const wrap        = wrapRef.current
     if (!front || !back || !fold || !wrap) return
 
-    const w = wrap.offsetWidth
+    const w      = wrap.offsetWidth
     const curOff = offsetRef.current
     const fs     = fontSizeRef.current
     const col    = pageColorRef.current?.text || ''
+    const dr     = dragRef.current
+    const sx     = dr?.startX ?? (dir === 'fwd' ? w : 0)
 
-    const dr = dragRef.current
-    const sx = dr?.startX ?? (dir === 'fwd' ? w : 0)
-
-    // Narrow crease strip — follows the finger position
-    const CURL_W = Math.max(36, Math.min(56, w * 0.12))
-
-    // Bell-curve highlight (peaks at mid-turn) + sin-based shadow (grows toward edge-on)
-    const angle      = progress * Math.PI / 2
-    const curveLight = progress * (1 - progress) * 4 * 0.50
-    const curveDark  = Math.sin(angle) * 0.78
+    // Surface lighting math: as the page rotates away, it darkens (less face-on)
+    const angle = progress * 90           // 0 = flat, 90 = edge-on (invisible)
+    const rad   = angle * Math.PI / 180
+    const shade = Math.sin(rad) * 0.52   // darkening as face rotates away from viewer
+    const glint = Math.max(0, Math.cos(rad) * 0.10 - 0.02)  // subtle highlight near flat
 
     if (dir === 'fwd') {
-      // Forward: crease starts at finger (sx), sweeps left to 0
-      const foldX = sx * (1 - progress)
-      const foldW = Math.min(w - foldX, CURL_W)
+      // Crease starts at the finger (sx) and sweeps left to 0
+      const creaseX = sx * (1 - progress)
+      // The fold covers the ENTIRE right portion — from the crease to the right edge.
+      // This is what makes it look like a real page folding, not a narrow strip.
+      const foldW = w - creaseX
 
-      front.style.clipPath = foldX > 0
-        ? `polygon(0 0,${foldX}px 0,${foldX}px 100%,0 100%)`
-        : 'polygon(0 0,0 0,0 100%,0 100%)'
+      // Front: flat remaining old page, left of crease
+      front.style.clipPath = creaseX > 0.5
+        ? `polygon(0 0, ${creaseX}px 0, ${creaseX}px 100%, 0 100%)`
+        : 'polygon(0 0, 0 0, 0 100%, 0 100%)'
 
-      fold.style.left            = `${foldX}px`
+      // Fold: old page right portion curling backward around the crease.
+      // transformOrigin = left edge (the crease line), rotateY folds the right edge away.
+      fold.style.left            = `${creaseX}px`
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '0% 50%'
-      fold.style.transform       = `perspective(500px) rotateY(${-progress * 90}deg)`
-      fold.style.filter          = 'none'
-      fold.style.opacity         = progress > 0.005 ? '1' : '0'
+      fold.style.transform       = `perspective(${w * 3}px) rotateY(${angle}deg)`
+      fold.style.opacity         = progress < 0.99 ? '1' : '0'
+      // Drop shadow falls left of crease onto the revealed new page
+      fold.style.filter          = progress > 0.02
+        ? `drop-shadow(-10px 0 20px rgba(0,0,0,${(0.40 * progress).toFixed(2)}))`
+        : 'none'
 
+      // Gradient: left edge (crease) has a glint, right edge darkens as it rotates away
       if (foldOverlay) {
-        foldOverlay.style.background = `linear-gradient(to right, rgba(255,255,255,${curveLight.toFixed(3)}) 0%, rgba(0,0,0,${curveDark.toFixed(3)}) 100%)`
-        foldOverlay.style.opacity    = progress > 0.005 ? '1' : '0'
+        foldOverlay.style.background = `linear-gradient(to right, rgba(255,255,255,${glint.toFixed(3)}) 0%, rgba(0,0,0,${shade.toFixed(3)}) 100%)`
+        foldOverlay.style.opacity    = '1'
       }
 
+      // Offset content inside fold to show the right portion of the old page
       if (foldInner) {
         foldInner.style.transform = `translateY(-${curOff}px)`
-        foldInner.style.left      = `-${foldX}px`
+        foldInner.style.left      = `-${creaseX}px`
         foldInner.style.width     = `${w}px`
         foldInner.style.fontSize  = `${fs}px`
         if (col) foldInner.style.color = col
+      }
+
+      // Crease highlight on left edge of fold (light bouncing off the paper crease)
+      if (foldCreaseRef.current) {
+        foldCreaseRef.current.style.left             = '0'
+        foldCreaseRef.current.style.right            = 'auto'
+        foldCreaseRef.current.style.backgroundImage  = 'linear-gradient(90deg, rgba(255,255,255,0.70) 0%, transparent 6px)'
       }
 
     } else {
-      // Backward: crease starts at finger (sx), sweeps right to w
-      const foldX    = sx + (w - sx) * progress
-      const foldW    = CURL_W
-      const foldRight = Math.min(w, foldX + foldW)
+      // Backward: crease starts at finger (sx) and sweeps right to w
+      const creaseX = sx + (w - sx) * progress
+      // The fold covers the left portion — from 0 to the crease
+      const foldW = creaseX
 
-      front.style.clipPath = foldRight < w
-        ? `polygon(${foldRight}px 0, 100% 0, 100% 100%, ${foldRight}px 100%)`
-        : 'polygon(100% 0,100% 0,100% 100%,100% 100%)'
+      // Front: flat remaining old page, right of crease
+      front.style.clipPath = creaseX < w - 0.5
+        ? `polygon(${creaseX}px 0, 100% 0, 100% 100%, ${creaseX}px 100%)`
+        : 'polygon(100% 0, 100% 0, 100% 100%, 100% 100%)'
 
-      fold.style.left            = `${foldX}px`
+      // Fold: old page LEFT portion curling backward around the crease.
+      // transformOrigin = right edge (the crease line), rotateY folds the left edge away.
+      fold.style.left            = '0px'
       fold.style.width           = `${foldW}px`
-      fold.style.transformOrigin = '0% 50%'
-      fold.style.transform       = `perspective(500px) rotateY(${progress * 90}deg)`
-      fold.style.filter          = 'none'
-      fold.style.opacity         = progress > 0.005 ? '1' : '0'
+      fold.style.transformOrigin = '100% 50%'
+      fold.style.transform       = `perspective(${w * 3}px) rotateY(${-angle}deg)`
+      fold.style.opacity         = progress < 0.99 ? '1' : '0'
+      // Drop shadow falls right of crease
+      fold.style.filter          = progress > 0.02
+        ? `drop-shadow(10px 0 20px rgba(0,0,0,${(0.40 * progress).toFixed(2)}))`
+        : 'none'
 
       if (foldOverlay) {
-        foldOverlay.style.background = `linear-gradient(to left, rgba(255,255,255,${curveLight.toFixed(3)}) 0%, rgba(0,0,0,${curveDark.toFixed(3)}) 100%)`
-        foldOverlay.style.opacity    = progress > 0.005 ? '1' : '0'
+        foldOverlay.style.background = `linear-gradient(to left, rgba(255,255,255,${glint.toFixed(3)}) 0%, rgba(0,0,0,${shade.toFixed(3)}) 100%)`
+        foldOverlay.style.opacity    = '1'
       }
 
+      // Content starts at 0 — shows the left portion of old page through the fold width
       if (foldInner) {
         foldInner.style.transform = `translateY(-${curOff}px)`
-        foldInner.style.left      = `-${foldX}px`
+        foldInner.style.left      = '0px'
         foldInner.style.width     = `${w}px`
         foldInner.style.fontSize  = `${fs}px`
         if (col) foldInner.style.color = col
       }
-    }
 
-    if (foldCreaseRef.current) {
-      if (dir === 'fwd') {
-        foldCreaseRef.current.style.left  = '0'
-        foldCreaseRef.current.style.right = ''
-        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(90deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.08) 60%, transparent 100%)'
-      } else {
-        foldCreaseRef.current.style.right = '0'
-        foldCreaseRef.current.style.left  = ''
-        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(-90deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.08) 60%, transparent 100%)'
+      if (foldCreaseRef.current) {
+        foldCreaseRef.current.style.left             = 'auto'
+        foldCreaseRef.current.style.right            = '0'
+        foldCreaseRef.current.style.backgroundImage  = 'linear-gradient(-90deg, rgba(255,255,255,0.70) 0%, transparent 6px)'
       }
     }
 
