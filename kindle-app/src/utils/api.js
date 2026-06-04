@@ -67,18 +67,27 @@ async function capGetText(url) {
   return data
 }
 
+// WebView fetch with timeout — uses Chromium stack, passes CDN/Cloudflare bot checks
+function webFetch(url, timeoutMs) {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(id))
+}
+
 async function getJson(url) {
+  const u = normaliseUrl(url)
   if (Capacitor.isNativePlatform()) {
+    // WebView fetch first — browser fingerprinting passes Cloudflare/CDNs
     try {
-      const data = await capGet(normaliseUrl(url))
+      const res = await webFetch(u, 15000)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return res.json()
+    } catch { /* fall through to native HTTP */ }
+    try {
+      const data = await capGet(u)
       return typeof data === 'string' ? JSON.parse(data) : data
-    } catch (capErr) {
-      try {
-        const text = await xhrGet(normaliseUrl(url))
-        return JSON.parse(text)
-      } catch (xhrErr) {
-        throw new Error(`cap: ${capErr?.message || capErr} | xhr: ${xhrErr?.message || xhrErr}`)
-      }
+    } catch {
+      throw new Error('Could not connect — check your internet and try again')
     }
   }
   const res = await fetch(url)
@@ -89,15 +98,16 @@ async function getJson(url) {
 async function getText(url) {
   const u = normaliseUrl(url)
   if (Capacitor.isNativePlatform()) {
+    // WebView fetch first — better for large files, passes bot checks
     try {
-      return await capGetText(u)
-    } catch (capErr) {
-      try {
-        const text = await xhrGet(u)
-        if (isHtmlResponse(text)) throw new Error('XHR got HTML page')
-        return text
-      } catch { /* fall through */ }
-      throw capErr
+      const res = await webFetch(u, 45000)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const text = await res.text()
+      if (isHtmlResponse(text)) throw new Error('Got HTML page instead of book text')
+      return text
+    } catch (fetchErr) {
+      try { return await capGetText(u) } catch { /* fall through */ }
+      throw fetchErr
     }
   }
   const res = await fetch(u)
@@ -147,7 +157,7 @@ export async function searchBooksAll(query, page = 1) {
     searchBooks(query, page),
     getJson(
       `${OPEN_LIBRARY}/search.json?q=${encodeURIComponent(query)}` +
-      `&fields=key,title,author_name,cover_i,ia,has_fulltext,subject,language,readinglog_count` +
+      `&fields=key,title,author_name,cover_i,ia,has_fulltext,public_scan_b,subject,language,readinglog_count` +
       `&limit=20&has_fulltext=true`
     ),
   ])
@@ -159,7 +169,8 @@ export async function searchBooksAll(query, page = 1) {
   const seenTitles = new Set(gutBooks.map(b => b.title.toLowerCase()))
   const olBooks = olResult.status === 'fulfilled'
     ? (olResult.value.docs || [])
-        .filter(doc => doc.has_fulltext && doc.ia)
+        // public_scan_b=true means freely downloadable; without it the book requires IA login (CDL)
+        .filter(doc => doc.has_fulltext && doc.ia && doc.public_scan_b === true)
         .map(normalizeOpenLibraryBook)
         .filter(b => !seenTitles.has(b.title.toLowerCase()))
     : []
@@ -233,7 +244,13 @@ export async function fetchBookText(book) {
           writeBookCache(book.id, text.trim())
           return text.trim()
         }
-      } catch (e) { lastErr = e }
+      } catch (e) {
+        lastErr = e
+        if (e.message?.includes('401')) break  // CDL — auth required, no point retrying
+      }
+    }
+    if (lastErr?.message?.includes('401')) {
+      throw new Error('This book requires an Internet Archive account. Try searching for it by title — a free Gutenberg version may be available.')
     }
     throw lastErr || new Error('Text not available for this book on Internet Archive')
   }

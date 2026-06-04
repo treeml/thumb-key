@@ -62,7 +62,7 @@ function ShelfRow({ title, books, onSelect, getProgress, loading, error, onRetry
           : error
           ? (
             <div className="shelf-error" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
-              <div style={{ fontSize: 13, color: '#e07b39', maxWidth: 300 }}>{error}</div>
+              <div style={{ fontSize: 13, color: '#e07b39', maxWidth: 300 }}>Couldn't load — check your connection</div>
               <button className="retry-btn" onClick={onRetry}>Retry</button>
             </div>
           )
