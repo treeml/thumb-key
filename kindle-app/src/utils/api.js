@@ -301,7 +301,26 @@ function cleanGutenbergText(text) {
 export async function lookupWord(word) {
   const clean = word.toLowerCase().replace(/[^a-z'-]/g, '')
   if (!clean) throw new Error('Invalid word')
-  return getJson(`${DICT_API}/${encodeURIComponent(clean)}`)
+  const url = normaliseUrl(`${DICT_API}/${encodeURIComponent(clean)}`)
+
+  if (Capacitor.isNativePlatform()) {
+    // Use CapacitorHttp directly so we can distinguish 404 (word unknown) from network errors.
+    // getJson's race treats all non-2xx the same; dictionary callers need to know the difference.
+    const res = await CapacitorHttp.get({
+      url,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36' },
+      connectTimeout: 8000,
+      readTimeout: 10000,
+    })
+    if (res.status === 404) throw new Error('not_found')
+    if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`)
+    return typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+  }
+
+  const res = await fetch(url)
+  if (res.status === 404) throw new Error('not_found')
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
 }
 
 export function getBookCoverUrl(book) { return book.formats?.['image/jpeg'] || null }

@@ -33,7 +33,11 @@ export default function Dictionary({ word, position, onClose, nightMode }) {
         <button className="dict-close" onClick={onClose}>×</button>
       </div>
       {loading && <div className="dict-loading">Looking up…</div>}
-      {error && <div className="dict-error">Word not found in dictionary.</div>}
+      {error && (
+        <div className="dict-error">
+          {error === 'not_found' ? 'No definition found.' : 'Could not reach dictionary — check your connection.'}
+        </div>
+      )}
       {result && (
         <div className="dict-body">
           {result.phonetics?.find(p => p.text) && (

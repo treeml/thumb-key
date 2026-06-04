@@ -81,6 +81,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const pendingTurnRef = useRef(null)  // { dir, startX, startY } — intent not yet confirmed
   const lastSelRef     = useRef(null)  // last valid selection text (survives tap-to-dismiss)
   const lastSelPosRef  = useRef(null)  // bounding rect centre of last selection
+  const shadowRef      = useRef(null)  // shadow cast by turning page onto flat remaining page
 
   const { highlights, addHighlight, removeHighlight } = useHighlights(book.id)
 
@@ -260,17 +261,18 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const col    = pageColorRef.current?.text || ''
     const dr     = dragRef.current
     const sx     = dr?.startX ?? (dir === 'fwd' ? w : 0)
+    const shadow = shadowRef.current
 
-    // Cylindrical lighting model:
-    //   Real paper curves into a cylinder. The apex (midpoint of fold) faces the viewer
-    //   directly = brightest point. Both edges face sideways = darkest.
-    //   sin(2θ) peaks at 45° → used for the apex highlight.
-    //   sin(θ)  peaks at 90° → used for the edge darkening.
-    const angle   = progress * 90
-    const rad     = angle * Math.PI / 180
-    const darkEdge = Math.sin(rad) * 0.42            // edges darken as they face sideways
-    const apexGlow = Math.sin(2 * rad) * 0.22        // apex brightens, peaks at 45° turn
-    const persp    = Math.round(w * 1.6)             // tighter perspective = stronger 3D
+    // Lighting on the fold surface (cylindrical model):
+    //   apex (mid-fold) faces viewer = brightest; both edges face sideways = darkest.
+    const angle    = progress * 90
+    const rad      = angle * Math.PI / 180
+    const darkEdge = Math.sin(rad) * 0.42         // darkens as surface rotates away
+    const apexGlow = Math.sin(2 * rad) * 0.22     // peaks at 45°, zero at 0° and 90°
+
+    // Shadow intensity: rises as page lifts, peaks near full turn
+    const shadowAlpha = (Math.sin(rad) * 0.50).toFixed(2)
+    const shadowW = Math.min(72, w * 0.20)        // shadow width on the flat remaining page
 
     if (dir === 'fwd') {
       const creaseX = sx * (1 - progress)
@@ -283,17 +285,27 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       fold.style.left            = `${creaseX}px`
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '0% 50%'
-      fold.style.transform       = `perspective(${persp}px) rotateY(${angle}deg)`
+      fold.style.transform       = `perspective(800px) rotateY(${angle}deg)`
       fold.style.opacity         = progress < 0.99 ? '1' : '0'
-      // Shadow grows as page lifts; constant string avoids per-frame style invalidation
-      fold.style.filter          = progress > 0.03 ? 'drop-shadow(-10px 0 18px rgba(0,0,0,0.32))' : 'none'
+      fold.style.filter          = 'none'
 
-      // Cylindrical gradient: dark at crease edge → bright at apex (42%) → dark at far edge
+      // Shadow: turning page casts shadow onto the flat old page left of the crease
+      if (shadow && progress > 0.02) {
+        const sw = Math.min(shadowW, creaseX)
+        shadow.style.left       = `${Math.max(0, creaseX - sw)}px`
+        shadow.style.width      = `${sw}px`
+        shadow.style.background = `linear-gradient(to left, rgba(0,0,0,${shadowAlpha}) 0%, transparent 100%)`
+        shadow.style.opacity    = '1'
+      } else if (shadow) {
+        shadow.style.opacity = '0'
+      }
+
+      // Cylindrical gradient: dark at crease → bright apex → dark at far edge
       if (foldOverlay) {
         foldOverlay.style.background = `linear-gradient(to right,
           rgba(0,0,0,${darkEdge.toFixed(3)}) 0%,
-          rgba(255,255,255,${apexGlow.toFixed(3)}) 42%,
-          rgba(0,0,0,${(darkEdge * 0.60).toFixed(3)}) 100%)`
+          rgba(255,255,255,${apexGlow.toFixed(3)}) 40%,
+          rgba(0,0,0,${(darkEdge * 0.55).toFixed(3)}) 100%)`
         foldOverlay.style.opacity = '1'
       }
 
@@ -308,7 +320,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       if (foldCreaseRef.current) {
         foldCreaseRef.current.style.left  = '0'
         foldCreaseRef.current.style.right = 'auto'
-        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(90deg, rgba(255,255,255,0.70) 0%, transparent 5px)'
+        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(90deg, rgba(255,255,255,0.80) 0%, transparent 5px)'
       }
 
     } else {
@@ -322,15 +334,26 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       fold.style.left            = '0px'
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '100% 50%'
-      fold.style.transform       = `perspective(${persp}px) rotateY(${-angle}deg)`
+      fold.style.transform       = `perspective(800px) rotateY(${-angle}deg)`
       fold.style.opacity         = progress < 0.99 ? '1' : '0'
-      fold.style.filter          = progress > 0.03 ? 'drop-shadow(10px 0 18px rgba(0,0,0,0.32))' : 'none'
+      fold.style.filter          = 'none'
+
+      // Shadow: falls to the right of the crease, onto the flat old page right portion
+      if (shadow && progress > 0.02) {
+        const sw = Math.min(shadowW, w - creaseX)
+        shadow.style.left       = `${creaseX}px`
+        shadow.style.width      = `${sw}px`
+        shadow.style.background = `linear-gradient(to right, rgba(0,0,0,${shadowAlpha}) 0%, transparent 100%)`
+        shadow.style.opacity    = '1'
+      } else if (shadow) {
+        shadow.style.opacity = '0'
+      }
 
       if (foldOverlay) {
         foldOverlay.style.background = `linear-gradient(to left,
           rgba(0,0,0,${darkEdge.toFixed(3)}) 0%,
-          rgba(255,255,255,${apexGlow.toFixed(3)}) 42%,
-          rgba(0,0,0,${(darkEdge * 0.60).toFixed(3)}) 100%)`
+          rgba(255,255,255,${apexGlow.toFixed(3)}) 40%,
+          rgba(0,0,0,${(darkEdge * 0.55).toFixed(3)}) 100%)`
         foldOverlay.style.opacity = '1'
       }
 
@@ -345,7 +368,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       if (foldCreaseRef.current) {
         foldCreaseRef.current.style.left  = 'auto'
         foldCreaseRef.current.style.right = '0'
-        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(-90deg, rgba(255,255,255,0.70) 0%, transparent 5px)'
+        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(-90deg, rgba(255,255,255,0.80) 0%, transparent 5px)'
       }
     }
 
@@ -361,6 +384,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       foldRef.current.style.width     = '0'
     }
     if (foldOverlayRef.current) foldOverlayRef.current.style.background = ''
+    if (shadowRef.current)      shadowRef.current.style.opacity = '0'
   }, [])
 
   // useLayoutEffect runs synchronously after React commits DOM changes.
@@ -438,7 +462,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     if (progress >= THRESHOLD) {
       const rawNext = dir === 'fwd' ? Math.min(curOff + ph, maxOff) : Math.max(curOff - ph, 0)
       const next = snapLine(rawNext)
-      const dur  = Math.max(120, (1 - progress) * 280)
+      const dur  = Math.max(160, (1 - progress) * 400)
       animateFold(dir, progress, 1, dur, () => {
         dragRef.current      = null
         pendingReset.current = true
@@ -782,7 +806,11 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
           </div>
         </div>
 
-        {/* Layer 3: The turning portion — 3D perspective rotateY so text curls with the fold */}
+        {/* Layer 3: Shadow cast by the turning page onto the flat remaining old page.
+            This is the single most important element for making the turn look 3D. */}
+        <div className="page-turn-shadow" ref={shadowRef} />
+
+        {/* Layer 4: The turning portion — 3D perspective rotateY so text curls with the fold */}
         <div className="page-fold" ref={foldRef}>
           <div className="page-paper page-paper-fold" style={paperStyle}>
             <div className="binding-shadow" />

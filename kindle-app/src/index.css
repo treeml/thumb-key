@@ -632,6 +632,17 @@ input, textarea { font-family: inherit; }
 .page-layer-back  { z-index: 1; }
 .page-layer-front { z-index: 2; will-change: clip-path; }
 
+/* Shadow cast by the turning page onto the flat remaining portion.
+   This is the primary depth cue — without it the fold looks like a flat shape rotating. */
+.page-turn-shadow {
+  position: absolute;
+  top: 0; bottom: 0;
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  will-change: left, width, opacity, background;
+}
+
 .page-paper {
   width: 100%; height: 100%;
   background: var(--page-bg);
@@ -676,15 +687,12 @@ input, textarea { font-family: inherit; }
   position: absolute;
   top: 0; bottom: 0;
   left: 0; width: 0;
-  z-index: 3;
+  z-index: 4;
   overflow: hidden;
   opacity: 0;
-  /* Hides automatically when rotated past 90° — no JS needed for that transition */
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  /* Promote to GPU layer for smooth compositing */
-  will-change: transform, width, opacity, left, filter;
-  transform-style: preserve-3d;
+  will-change: transform, width, opacity, left;
 }
 .page-paper-fold {
   position: absolute !important;
