@@ -4,7 +4,7 @@ import { parseFb2 } from '../utils/fb2Parser'
 import { idbSet } from '../utils/idb'
 import { exportBackup, importBackup } from '../utils/backup'
 
-const ACCEPT = '.epub,.fb2,.txt,.mp3,.m4a,.m4b,.ogg,.aac,.flac,.json'
+const ACCEPT = '.epub,.fb2,.txt,.mp3,.m4a,.m4b,.ogg,.aac,.flac,.json,application/x-fictionbook+xml,application/x-fictionbook'
 
 async function readMetaFromAudio(file) {
   return new Promise(resolve => {
