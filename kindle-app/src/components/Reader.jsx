@@ -78,6 +78,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const lineHRef       = useRef(33)   // fontSize * 1.85, rounded
   const showChromeRef  = useRef(false)
   const chromeTimerRef = useRef(null)
+  const pendingTurnRef = useRef(null)  // { dir, startX, startY } — intent not yet confirmed
 
   const { highlights, addHighlight, removeHighlight } = useHighlights(book.id)
 
@@ -427,21 +428,53 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const el = wrapRef.current
     if (!el) return
     const onMove = (e) => {
+      // ── Active drag: update fold visuals ──
       const dr = dragRef.current
-      if (!dr) return
-      e.preventDefault()
-      const x = e.touches[0].clientX
-      dr.lastX = x
-      const w = el.offsetWidth
-      // Normalise by distance from startX to the target edge so foldX === x
-      const progress = dr.dir === 'fwd'
-        ? Math.max(0, Math.min(1, (dr.startX - x) / Math.max(dr.startX, 1)))
-        : Math.max(0, Math.min(1, (x - dr.startX) / Math.max(w - dr.startX, 1)))
-      applyDragVisuals(dr.dir, progress)
+      if (dr) {
+        e.preventDefault()
+        const x = e.touches[0].clientX
+        dr.lastX = x
+        const w = el.offsetWidth
+        const progress = dr.dir === 'fwd'
+          ? Math.max(0, Math.min(1, (dr.startX - x) / Math.max(dr.startX, 1)))
+          : Math.max(0, Math.min(1, (x - dr.startX) / Math.max(w - dr.startX, 1)))
+        applyDragVisuals(dr.dir, progress)
+        return
+      }
+
+      // ── Pending turn: wait for horizontal swipe intent ──
+      const pt = pendingTurnRef.current
+      if (!pt) return
+      const touch = e.touches[0]
+      const adx = Math.abs(touch.clientX - pt.startX)
+      const ady = Math.abs(touch.clientY - pt.startY)
+      const wrongDir = (pt.dir === 'fwd' && touch.clientX > pt.startX) ||
+                       (pt.dir === 'bck' && touch.clientX < pt.startX)
+
+      if (wrongDir || ady > adx * 1.8 || ady > 22) {
+        // Vertical or wrong-direction move → cancel, let browser handle (text selection etc.)
+        pendingTurnRef.current = null
+        return
+      }
+
+      if (adx > 12 && adx >= ady) {
+        // Confirmed horizontal swipe → commit to page turn drag
+        e.preventDefault()
+        const curOff = offsetRef.current
+        const ph     = pageHRef.current
+        const maxOff = Math.max(0, totalHRef.current - ph)
+        const backOff = pt.dir === 'fwd'
+          ? Math.min(curOff + ph, maxOff)
+          : Math.max(curOff - ph, 0)
+        setBackLayerOffset(backOff)
+        dragRef.current      = { dir: pt.dir, startX: pt.startX, lastX: touch.clientX }
+        pendingTurnRef.current = null
+      }
+      // else: still undecided — don't preventDefault, let native events through
     }
     el.addEventListener('touchmove', onMove, { passive: false })
     return () => el.removeEventListener('touchmove', onMove)
-  }, [applyDragVisuals])
+  }, [applyDragVisuals, setBackLayerOffset])
 
   const handleTouchStart = useCallback((e) => {
     if (dragRef.current) return
@@ -466,27 +499,21 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const x    = e.touches[0].clientX
     const w    = wrapRef.current?.offsetWidth || window.innerWidth
     const curOff = offsetRef.current
-    const ph     = pageHRef.current
-    const maxOff = Math.max(0, totalHRef.current - ph)
+    const maxOff = Math.max(0, totalHRef.current - pageHRef.current)
 
-    // Only the outer 20% of the screen triggers page turns.
-    // The middle 60% is free for text selection and highlighting.
+    // Only the outer 20% of the screen can trigger a page turn.
+    // Don't commit yet — wait for confirmed horizontal swipe in touchmove.
     const EDGE = 0.20
     let dir = null
     if (x > w * (1 - EDGE) && curOff < maxOff) dir = 'fwd'
     else if (x < w * EDGE && curOff > 0) dir = 'bck'
     if (!dir) return
 
-    const backOff = dir === 'fwd'
-      ? Math.min(curOff + ph, maxOff)
-      : Math.max(curOff - ph, 0)
-
-    setBackLayerOffset(backOff)
-    dragRef.current = { dir, startX: x, lastX: x }
-    applyDragVisuals(dir, 0)
-  }, [applyDragVisuals, setBackLayerOffset, showAndAutoHideChrome, setChrome])
+    pendingTurnRef.current = { dir, startX: x, startY: y }
+  }, [showAndAutoHideChrome, setChrome])
 
   const handleTouchEnd = useCallback((e) => {
+    pendingTurnRef.current = null  // clear unconfirmed intent regardless
     const dr = dragRef.current
     if (!dr) return
     const x = e.changedTouches[0].clientX
