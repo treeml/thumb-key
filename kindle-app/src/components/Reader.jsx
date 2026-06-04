@@ -238,16 +238,16 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const dr = dragRef.current
     const sx = dr?.startX ?? (dir === 'fwd' ? w : 0)
 
-    // Narrow curl strip — the key to paper-like feel.
-    // The strip is ~70px wide max; the back (next/prev page) shows through the gap.
-    const CURL_W = Math.max(48, Math.min(72, w * 0.16))
+    // Narrow crease strip — follows the finger position
+    const CURL_W = Math.max(36, Math.min(56, w * 0.12))
 
     // Bell-curve highlight (peaks at mid-turn) + sin-based shadow (grows toward edge-on)
     const angle      = progress * Math.PI / 2
-    const curveLight = progress * (1 - progress) * 4 * 0.50   // 0 → peaks → 0
-    const curveDark  = Math.sin(angle) * 0.78                   // 0 → grows → max at edge-on
+    const curveLight = progress * (1 - progress) * 4 * 0.50
+    const curveDark  = Math.sin(angle) * 0.78
 
     if (dir === 'fwd') {
+      // Forward: crease starts at finger (sx), sweeps left to 0
       const foldX = sx * (1 - progress)
       const foldW = Math.min(w - foldX, CURL_W)
 
@@ -276,10 +276,10 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       }
 
     } else {
-      // Backward: narrow strip sweeps left→right, revealing previous page on the left
-      const foldX    = progress * (w - CURL_W)
+      // Backward: crease starts at finger (sx), sweeps right to w
+      const foldX    = sx + (w - sx) * progress
       const foldW    = CURL_W
-      const foldRight = foldX + foldW
+      const foldRight = Math.min(w, foldX + foldW)
 
       front.style.clipPath = foldRight < w
         ? `polygon(${foldRight}px 0, 100% 0, 100% 100%, ${foldRight}px 100%)`
@@ -287,7 +287,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
 
       fold.style.left            = `${foldX}px`
       fold.style.width           = `${foldW}px`
-      fold.style.transformOrigin = '100% 50%'
+      fold.style.transformOrigin = '0% 50%'
       fold.style.transform       = `perspective(500px) rotateY(${progress * 90}deg)`
       fold.style.filter          = 'none'
       fold.style.opacity         = progress > 0.005 ? '1' : '0'
@@ -306,16 +306,15 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       }
     }
 
-    // Crease highlight: always at the hinge edge (left for fwd, right for bck)
     if (foldCreaseRef.current) {
       if (dir === 'fwd') {
         foldCreaseRef.current.style.left  = '0'
         foldCreaseRef.current.style.right = ''
-        foldCreaseRef.current.style.backgroundImage = ''
+        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(90deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.08) 60%, transparent 100%)'
       } else {
         foldCreaseRef.current.style.right = '0'
         foldCreaseRef.current.style.left  = ''
-        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(-90deg, rgba(255,255,255,0.50) 0%, rgba(255,255,255,0.08) 60%, transparent 100%)'
+        foldCreaseRef.current.style.backgroundImage = 'linear-gradient(-90deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.08) 60%, transparent 100%)'
       }
     }
 
@@ -442,27 +441,30 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
         return
       }
 
-      // ── Pending turn: wait for horizontal swipe intent ──
+      // ── Pending turn: wait for horizontal swipe intent, then derive direction ──
       const pt = pendingTurnRef.current
       if (!pt) return
       const touch = e.touches[0]
       const adx = Math.abs(touch.clientX - pt.startX)
       const ady = Math.abs(touch.clientY - pt.startY)
 
-      // Only cancel if movement is clearly vertical (scroll), not on any rightward noise
       if (ady > 36) { pendingTurnRef.current = null; return }
 
       if (adx > 8) {
-        // Horizontal movement confirmed → commit to drag
         e.preventDefault()
         const curOff = offsetRef.current
         const ph     = pageHRef.current
         const maxOff = Math.max(0, totalHRef.current - ph)
-        const backOff = pt.dir === 'fwd'
+        // Direction from the gesture itself — swipe left = forward, swipe right = backward
+        const dir = touch.clientX < pt.startX ? 'fwd' : 'bck'
+        if ((dir === 'fwd' && curOff >= maxOff) || (dir === 'bck' && curOff <= 0)) {
+          pendingTurnRef.current = null; return
+        }
+        const backOff = dir === 'fwd'
           ? Math.min(curOff + ph, maxOff)
           : Math.max(curOff - ph, 0)
         setBackLayerOffset(backOff)
-        dragRef.current        = { dir: pt.dir, startX: pt.startX, lastX: touch.clientX }
+        dragRef.current        = { dir, startX: pt.startX, lastX: touch.clientX }
         pendingTurnRef.current = null
       }
     }
@@ -490,20 +492,9 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       return
     }
 
-    const x    = e.touches[0].clientX
-    const w    = wrapRef.current?.offsetWidth || window.innerWidth
-    const curOff = offsetRef.current
-    const maxOff = Math.max(0, totalHRef.current - pageHRef.current)
-
-    // Only the outer 20% of the screen can trigger a page turn.
-    // Don't commit yet — wait for confirmed horizontal swipe in touchmove.
-    const EDGE = 0.20
-    let dir = null
-    if (x > w * (1 - EDGE) && curOff < maxOff) dir = 'fwd'
-    else if (x < w * EDGE && curOff > 0) dir = 'bck'
-    if (!dir) return
-
-    pendingTurnRef.current = { dir, startX: x, startY: y }
+    const x = e.touches[0].clientX
+    // Any swipe anywhere triggers a turn — direction is determined in touchmove from gesture
+    pendingTurnRef.current = { dir: null, startX: x, startY: y }
   }, [showAndAutoHideChrome, setChrome])
 
   const handleTouchEnd = useCallback((e) => {
@@ -525,21 +516,22 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     }
 
     // Quick-flick: finger lifted before touchmove confirmed the drag.
-    // If the swipe was clearly in the right direction, commit as a full turn.
+    // Derive direction from the touch path and commit as a full turn.
     if (pt) {
       const adx = Math.abs(x - pt.startX)
       const ady = Math.abs(e.changedTouches[0].clientY - pt.startY)
-      const rightDir = (pt.dir === 'fwd' && x < pt.startX) || (pt.dir === 'bck' && x > pt.startX)
-      if (rightDir && adx > 12 && adx > ady) {
+      if (adx > 12 && adx > ady) {
+        const dir = x < pt.startX ? 'fwd' : 'bck'
         const curOff = offsetRef.current
         const ph     = pageHRef.current
         const maxOff = Math.max(0, totalHRef.current - ph)
-        const backOff = pt.dir === 'fwd'
+        if ((dir === 'fwd' && curOff >= maxOff) || (dir === 'bck' && curOff <= 0)) return
+        const backOff = dir === 'fwd'
           ? Math.min(curOff + ph, maxOff)
           : Math.max(curOff - ph, 0)
         setBackLayerOffset(backOff)
-        dragRef.current = { dir: pt.dir, startX: pt.startX, lastX: x }
-        finishDrag(pt.dir, 0.45)  // animate from rest as a flick
+        dragRef.current = { dir, startX: pt.startX, lastX: x }
+        finishDrag(dir, 0.45)
       }
     }
   }, [finishDrag, setBackLayerOffset])
