@@ -59,6 +59,27 @@ const val TAG = "com.thumbkey"
 const val IME_ACTION_CUSTOM_LABEL = EditorInfo.IME_MASK_ACTION + 1
 const val ANIMATION_SPEED = 300
 
+fun String.isWordSeparator(): Boolean =
+    this == " " || this == "\n" || this == "." || this == "," ||
+        this == "!" || this == "?" || this == ";" || this == ":"
+
+fun extractLastWord(
+    text: String,
+    separatorLength: Int,
+): String? {
+    val textBeforeSep = text.dropLast(separatorLength)
+    val wordChars = StringBuilder()
+    for (char in textBeforeSep.reversed()) {
+        if (char.isLetter() || char == '\'') {
+            wordChars.insert(0, char)
+        } else {
+            break
+        }
+    }
+    val word = wordChars.toString()
+    return if (word.length >= 2) word else null
+}
+
 fun accelCurve(
     offset: Float,
     threshold: Float,
@@ -325,6 +346,7 @@ fun performKeyAction(
     action: KeyAction,
     ime: IMEService,
     autoCapitalize: Boolean,
+    autoCorrect: Boolean,
     keyboardSettings: KeyboardDefinitionSettings,
     onToggleShiftMode: (enable: Boolean) -> Unit,
     onToggleNumericMode: (enable: Boolean) -> Unit,
@@ -343,6 +365,23 @@ fun performKeyAction(
                 text,
                 1,
             )
+
+            if (autoCorrect && text.isWordSeparator()) {
+                val textBefore = ime.currentInputConnection.getTextBeforeCursor(200, 0)?.toString()
+                if (textBefore != null) {
+                    val word = extractLastWord(textBefore, text.length)
+                    if (word != null) {
+                        ime.autoCorrectManager.checkWord(word) { corrected ->
+                            val ic = ime.currentInputConnection ?: return@checkWord
+                            val current = ic.getTextBeforeCursor(word.length + text.length, 0)?.toString()
+                            if (current == word + text) {
+                                ic.deleteSurroundingText(word.length + text.length, 0)
+                                ic.commitText(corrected + text, 1)
+                            }
+                        }
+                    }
+                }
+            }
 
             if (autoCapitalize) {
                 autoCapitalize(

@@ -57,6 +57,7 @@ const val DEFAULT_CIRCULAR_DRAG_ENABLED = 1
 const val DEFAULT_CLOCKWISE_DRAG_ACTION = 0
 const val DEFAULT_COUNTERCLOCKWISE_DRAG_ACTION = 1
 const val DEFAULT_GHOST_KEYS_ENABLED = 0
+const val DEFAULT_AUTO_CORRECT = 1
 
 @Entity
 data class AppSettings(
@@ -232,6 +233,11 @@ data class AppSettings(
         defaultValue = DEFAULT_GHOST_KEYS_ENABLED.toString(),
     )
     val ghostKeysEnabled: Int,
+    @ColumnInfo(
+        name = "auto_correct",
+        defaultValue = DEFAULT_AUTO_CORRECT.toString(),
+    )
+    val autoCorrect: Int,
 )
 
 data class LayoutsUpdate(
@@ -342,6 +348,8 @@ data class BehaviorUpdate(
     val counterclockwiseDragAction: Int,
     @ColumnInfo(name = "ghost_keys_enabled")
     val ghostKeysEnabled: Int,
+    @ColumnInfo(name = "auto_correct")
+    val autoCorrect: Int,
 )
 
 @Dao
@@ -582,8 +590,17 @@ val MIGRATION_15_16 =
         }
     }
 
+val MIGRATION_16_17 =
+    object : Migration(16, 17) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "alter table AppSettings add column auto_correct INTEGER NOT NULL default $DEFAULT_AUTO_CORRECT",
+            )
+        }
+    }
+
 @Database(
-    version = 16,
+    version = 17,
     entities = [AppSettings::class],
     exportSchema = true,
 )
@@ -621,6 +638,7 @@ abstract class AppDB : RoomDatabase() {
                             MIGRATION_13_14,
                             MIGRATION_14_15,
                             MIGRATION_15_16,
+                            MIGRATION_16_17,
                         )
                         // Necessary because it can't insert data on creation
                         .addCallback(

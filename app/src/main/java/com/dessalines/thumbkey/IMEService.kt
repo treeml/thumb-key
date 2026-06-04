@@ -16,6 +16,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.dessalines.thumbkey.utils.AutoCorrectManager
 import com.dessalines.thumbkey.utils.TAG
 
 class IMEService :
@@ -23,6 +24,9 @@ class IMEService :
     LifecycleOwner,
     ViewModelStoreOwner,
     SavedStateRegistryOwner {
+
+    val autoCorrectManager = AutoCorrectManager(this)
+
     private fun setupView(): View {
         val settingsRepo = (application as ThumbkeyApplication).appSettingsRepository
 
@@ -64,11 +68,13 @@ class IMEService :
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        autoCorrectManager.init()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        autoCorrectManager.destroy()
     }
 
     // Cursor update Methods
