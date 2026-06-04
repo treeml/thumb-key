@@ -392,6 +392,7 @@ fun KeyboardScreen(
                                     keyBorderWidth = keyBorderWidthFloat,
                                     keyRadius = cornerRadius,
                                     autoCapitalize = autoCapitalize,
+                                    autoCorrect = autoCorrect,
                                     keyboardSettings = keyboardDefinition.settings,
                                     spacebarMultiTaps = spacebarMultiTaps,
                                     vibrateOnTap = vibrateOnTap,

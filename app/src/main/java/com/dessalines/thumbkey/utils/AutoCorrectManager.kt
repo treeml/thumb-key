@@ -57,7 +57,7 @@ class AutoCorrectManager(
         val info = results?.firstOrNull() ?: return
         val isTypo = (info.suggestionsAttributes and SuggestionsInfo.RESULT_ATTR_LOOKS_LIKE_TYPO) != 0
         if (isTypo && info.suggestionsCount > 0) {
-            val suggestion = info.getSuggestion(0)
+            val suggestion = SpellCheckerHelper.getFirstSuggestion(info) ?: return
             if (suggestion.isNotEmpty() && suggestion != word) {
                 callback(suggestion)
             }
