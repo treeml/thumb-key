@@ -26,7 +26,7 @@ export default function App() {
 
   const shelfScrollY = useRef(0)
 
-  const { books: myLibrary, addBook, removeBook, hasBook, setProgress, getProgress } = useLibrary()
+  const { books: myLibrary, readingNow, addBook, removeBook, hasBook, setProgress, getProgress, shelveBook } = useLibrary()
   const { books: audioBooks, addAudiobook, removeAudiobook, setPosition, library: audioLib } = useAudiobooks()
 
   useEffect(() => {
@@ -157,10 +157,12 @@ export default function App() {
         {view === 'library' && (
           <Library
             myLibrary={myLibrary}
+            readingNow={readingNow}
             getProgress={getProgress}
             onBack={() => setView('shelf')}
             onRead={handleRead}
             removeBook={removeBook}
+            shelveBook={shelveBook}
             nightMode={nightMode}
           />
         )}

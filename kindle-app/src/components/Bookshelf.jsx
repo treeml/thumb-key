@@ -13,14 +13,39 @@ const CATEGORIES = [
   { label: 'Poetry',     key: 'poetry',     query: 'poetry' },
 ]
 
-// Module-level cache — survives component unmount/remount
-const sectionCache = {}
+// ─── Module-level cache ───────────────────────────────────────────────────────
+// Lives outside React so it survives component unmount and app backgrounding.
+const cache    = {}   // key → books[]
+const errors   = {}   // key → error string | null
+const pending  = {}   // key → true while in-flight
+const listeners = new Set()
+
+function notify() { listeners.forEach(fn => fn()) }
+
+function loadCat(cat) {
+  if (cache[cat.key] || pending[cat.key]) return
+  pending[cat.key] = true
+  const p = cat.query ? fetchBooksBySubject(cat.query) : searchBooks(null, 1)
+  p.then(data => {
+    cache[cat.key]   = data.results || []
+    errors[cat.key]  = null
+    pending[cat.key] = false
+    notify()
+  }).catch(e => {
+    errors[cat.key]  = e?.message || 'Load failed'
+    pending[cat.key] = false
+    notify()
+  })
+}
+
+// Start loading immediately when this module is first imported.
+// Staggered so we don't hammer the API on cold start.
+CATEGORIES.forEach((cat, i) => setTimeout(() => loadCat(cat), i * 600))
+// ─────────────────────────────────────────────────────────────────────────────
 
 function ShelfRow({ title, books, onSelect, getProgress, loading, error, onRetry }) {
   const rowRef = useRef(null)
-  const scroll = (dir) => {
-    if (rowRef.current) rowRef.current.scrollBy({ left: dir * 260, behavior: 'smooth' })
-  }
+  const scroll = (dir) => rowRef.current?.scrollBy({ left: dir * 260, behavior: 'smooth' })
 
   return (
     <div className="shelf-row">
@@ -36,8 +61,8 @@ function ShelfRow({ title, books, onSelect, getProgress, loading, error, onRetry
           ? Array.from({ length: 6 }).map((_, i) => <div key={i} className="book-card-skeleton" />)
           : error
           ? (
-            <div className="shelf-error" style={{flexDirection:'column',alignItems:'flex-start',gap:8}}>
-              <div style={{fontSize:13,color:'#e07b39',maxWidth:300,wordBreak:'break-all'}}>{error}</div>
+            <div className="shelf-error" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
+              <div style={{ fontSize: 13, color: '#e07b39', maxWidth: 300 }}>{error}</div>
               <button className="retry-btn" onClick={onRetry}>Retry</button>
             </div>
           )
@@ -59,43 +84,21 @@ function ShelfRow({ title, books, onSelect, getProgress, loading, error, onRetry
 }
 
 export default function Bookshelf({ onSelectBook, getProgress, myLibrary, onOpenLibrary, addBook, hasBook }) {
-  const [sections, setSections] = useState(() => ({ ...sectionCache }))
-  const [loading, setLoading] = useState({})
-  const [errors, setErrors] = useState({})
-
-  const fetchCategory = useCallback((cat) => {
-    delete sectionCache[cat.key]
-    setSections(p => { const n = { ...p }; delete n[cat.key]; return n })
-    setErrors(p => ({ ...p, [cat.key]: false }))
-    setLoading(p => ({ ...p, [cat.key]: true }))
-
-    const fetcher = cat.query ? fetchBooksBySubject(cat.query) : searchBooks(null, 1)
-    fetcher
-      .then(data => {
-        const results = data.results || []
-        sectionCache[cat.key] = results
-        setSections(p => ({ ...p, [cat.key]: results }))
-        setErrors(p => ({ ...p, [cat.key]: false }))
-      })
-      .catch((e) => {
-        let msg = 'unknown'
-        try { msg = e?.message || JSON.stringify(e) || String(e) } catch { msg = String(e) }
-        setErrors(p => ({ ...p, [cat.key]: msg }))
-      })
-      .finally(() => setLoading(p => ({ ...p, [cat.key]: false })))
-  }, [])
+  // A single counter forces a re-render whenever the module cache updates
+  const [, rerender] = useState(0)
 
   useEffect(() => {
-    const timers = []
-    CATEGORIES.forEach((cat, i) => {
-      if (sectionCache[cat.key]) return  // already cached
+    const trigger = () => rerender(n => n + 1)
+    listeners.add(trigger)
+    return () => listeners.delete(trigger)
+  }, [])
 
-      const t = setTimeout(() => fetchCategory(cat), i * 400)
-      timers.push(t)
-    })
-    return () => timers.forEach(clearTimeout)
-  }, [fetchCategory])
-
+  const retryCategory = useCallback((cat) => {
+    delete cache[cat.key]
+    delete errors[cat.key]
+    loadCat(cat)
+    rerender(n => n + 1)
+  }, [])
 
   return (
     <div className="bookshelf-container">
@@ -122,35 +125,26 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, onOpen
                 <stop offset="100%" stopColor="#ff9020" stopOpacity="0"/>
               </radialGradient>
             </defs>
-            {/* Sky */}
             <rect width="560" height="200" fill="#0d0820"/>
             <rect width="560" height="200" fill="url(#moonGl)"/>
             <rect width="560" height="200" fill="url(#lg1)"/>
             <rect width="560" height="200" fill="url(#lg2)"/>
-            {/* Stars */}
             {[[42,14,1.1],[110,8,0.9],[190,18,1.3],[290,6,1.0],[390,12,1.2],[490,17,0.9],[68,40,0.8],[240,28,1.1],[440,32,1.0],[18,22,0.8],[530,10,1.1],[340,38,0.9]].map(([x,y,r],i)=>(
               <circle key={i} cx={x} cy={y} r={r} fill="white" opacity={0.55+i%4*0.1}/>
             ))}
-            {/* Moon */}
             <circle cx="468" cy="26" r="19" fill="#ffecc0"/>
             <circle cx="477" cy="21" r="16" fill="#0d0820"/>
-            {/* Ground */}
             <rect x="0" y="183" width="560" height="17" fill="#1a0d05"/>
             <rect x="0" y="181" width="560" height="3" fill="#261508"/>
-            {/* Steps */}
             <rect x="55" y="174" width="450" height="9" fill="#3a2210" rx="1"/>
             <rect x="70" y="165" width="420" height="10" fill="#472a15" rx="1"/>
             <rect x="85" y="157" width="390" height="9" fill="#543218" rx="1"/>
-            {/* Building body */}
             <rect x="85" y="68" width="390" height="90" fill="#2e1c0c"/>
-            {/* Pediment */}
             <polygon points="70,70 280,18 490,70" fill="#2a1908"/>
             <polygon points="85,70 280,23 475,70" fill="#3a2410"/>
             <text x="280" y="46" textAnchor="middle" fill="#c9a84c" fontSize="9" fontFamily="Georgia,serif" letterSpacing="3" opacity="0.85">BIBLIOTHECA</text>
-            {/* Entablature */}
             <rect x="78" y="66" width="404" height="8" fill="#4a3018"/>
             <rect x="78" y="72" width="404" height="3" fill="#3a2410"/>
-            {/* Columns — 8 across */}
             {[100,155,210,265,320,375,430,469].map((x,i)=>(
               <g key={i}>
                 <rect x={x} y="75" width="13" height="83" fill="#4a3018" rx="1"/>
@@ -160,7 +154,6 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, onOpen
                 <rect x={x-2} y="156" width="17" height="4" fill="#5a3a22" rx="1"/>
               </g>
             ))}
-            {/* Windows — four arched */}
             {[120,213,303,393].map((x,i)=>(
               <g key={i}>
                 <rect x={x} y="88" width="55" height="50" fill="#160e06" rx="1"/>
@@ -172,7 +165,6 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, onOpen
                 <line x1={x} y1="113" x2={x+55} y2="113" stroke="#160e06" strokeWidth="1.5"/>
               </g>
             ))}
-            {/* Door */}
             <rect x="257" y="126" width="46" height="34" fill="#0e0808" rx="2"/>
             <path d="M257 126 Q280 113 303 126" fill="#0e0808"/>
             <rect x="259" y="128" width="19" height="14" fill="#1a1008" opacity="0.5" rx="1"/>
@@ -180,7 +172,6 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, onOpen
             <rect x="259" y="145" width="19" height="13" fill="#1a1008" opacity="0.5" rx="1"/>
             <rect x="281" y="145" width="20" height="13" fill="#1a1008" opacity="0.5" rx="1"/>
             <circle cx="298" cy="144" r="2.5" fill="#c9a84c"/>
-            {/* Lamp posts */}
             {[[112,155],[447,155]].map(([x,y],i)=>(
               <g key={i}>
                 <rect x={x-2} y={y} width="4" height="30" fill="#3a2010"/>
@@ -199,16 +190,17 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, onOpen
           </div>
         </div>
       </div>
+
       {CATEGORIES.map(cat => (
         <ShelfRow
           key={cat.key}
           title={cat.label}
-          books={sections[cat.key] || []}
+          books={cache[cat.key] || []}
           onSelect={onSelectBook}
           getProgress={getProgress}
-          loading={!!loading[cat.key] || (!sectionCache[cat.key] && !errors[cat.key] && !sections[cat.key])}
-          error={!!errors[cat.key]}
-          onRetry={() => fetchCategory(cat)}
+          loading={!!pending[cat.key] || (!cache[cat.key] && !errors[cat.key])}
+          error={errors[cat.key] || null}
+          onRetry={() => retryCategory(cat)}
         />
       ))}
     </div>
