@@ -21,6 +21,11 @@ function xhrGet(url) {
   })
 }
 
+function isHtmlResponse(text) {
+  const t = (text || '').trimStart()
+  return t.startsWith('<!') || /^<html/i.test(t)
+}
+
 // Force HTTPS and normalise Gutenberg URLs
 function normaliseUrl(url) {
   return url.replace(/^http:\/\//i, 'https://')
@@ -30,6 +35,7 @@ function normaliseUrl(url) {
 function gutenbergFallbackUrls(bookId) {
   const id = String(bookId)
   return [
+    `https://www.gutenberg.org/cache/epub/${id}/pg${id}.txt`,
     `https://gutenberg.org/cache/epub/${id}/pg${id}.txt`,
     `https://www.gutenberg.org/files/${id}/${id}-0.txt`,
     `https://www.gutenberg.org/files/${id}/${id}.txt`,
@@ -39,10 +45,26 @@ function gutenbergFallbackUrls(bookId) {
 async function capGet(url) {
   const res = await CapacitorHttp.get({
     url,
-    headers: { 'User-Agent': 'Tome-App/1.0' },
+    headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36' },
+    connectTimeout: 12000,
+    readTimeout: 20000,
   })
   if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`)
   return res.data
+}
+
+async function capGetText(url) {
+  const res = await CapacitorHttp.get({
+    url,
+    headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36' },
+    responseType: 'text',
+    connectTimeout: 15000,
+    readTimeout: 60000,
+  })
+  if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`)
+  const data = typeof res.data === 'string' ? res.data : String(res.data ?? '')
+  if (isHtmlResponse(data)) throw new Error('Received HTML page instead of text file')
+  return data
 }
 
 async function getJson(url) {
@@ -65,19 +87,20 @@ async function getJson(url) {
 }
 
 async function getText(url) {
-  const urls = [normaliseUrl(url)]
+  const u = normaliseUrl(url)
   if (Capacitor.isNativePlatform()) {
-    for (const u of urls) {
+    try {
+      return await capGetText(u)
+    } catch (capErr) {
       try {
-        const data = await capGet(u)
-        return typeof data === 'string' ? data : JSON.stringify(data)
-      } catch { /* try next */ }
+        const text = await xhrGet(u)
+        if (isHtmlResponse(text)) throw new Error('XHR got HTML page')
+        return text
+      } catch { /* fall through */ }
+      throw capErr
     }
-    // CapacitorHttp failed — try XHR
-    try { return await xhrGet(normaliseUrl(url)) } catch { /* fall through */ }
-    throw new Error('Could not load book text — all methods failed')
   }
-  const res = await fetch(url)
+  const res = await fetch(u)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.text()
 }
@@ -198,7 +221,7 @@ export async function fetchBookText(book) {
     const iaId = book.ia
     const urlsToTry = [
       iaId && `${INTERNET_ARCHIVE}/download/${iaId}/${iaId}.txt`,
-      formats['text/plain'],
+      iaId && `${INTERNET_ARCHIVE}/download/${iaId}/${iaId}_rawtext.txt`,
       iaId && `${INTERNET_ARCHIVE}/download/${iaId}/${iaId}_djvu.txt`,
     ].filter(Boolean).map(normaliseUrl)
 
@@ -207,24 +230,30 @@ export async function fetchBookText(book) {
       try {
         const text = await getText(url)
         if (text && text.length > 500) {
-          const clean = text.trim()
-          writeBookCache(book.id, clean)
-          return clean
+          writeBookCache(book.id, text.trim())
+          return text.trim()
         }
       } catch (e) { lastErr = e }
     }
     throw lastErr || new Error('Text not available for this book on Internet Archive')
   }
 
+  // Gutenberg: try direct cache URL first (no redirect), then Gutendex format URL, then other fallbacks
+  const gutId = String(book.id)
   const apiUrl =
     formats['text/plain; charset=utf-8'] ||
     formats['text/plain; charset=us-ascii'] ||
     formats['text/plain'] ||
     Object.entries(formats).find(([k]) => k.startsWith('text/plain'))?.[1]
 
-  const urlsToTry = apiUrl
-    ? [apiUrl, ...gutenbergFallbackUrls(book.id)]
-    : gutenbergFallbackUrls(book.id)
+  const seen = new Set()
+  const urlsToTry = [
+    `https://www.gutenberg.org/cache/epub/${gutId}/pg${gutId}.txt`,
+    apiUrl,
+    `https://gutenberg.org/cache/epub/${gutId}/pg${gutId}.txt`,
+    `https://www.gutenberg.org/files/${gutId}/${gutId}-0.txt`,
+    `https://www.gutenberg.org/files/${gutId}/${gutId}.txt`,
+  ].filter(u => u && !seen.has(u) && seen.add(u))
 
   let lastErr
   for (const url of urlsToTry) {

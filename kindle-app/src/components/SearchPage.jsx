@@ -37,10 +37,6 @@ export default function SearchPage({ onSelectBook, getProgress, addBook, hasBook
 
   return (
     <div className="search-page">
-      <div className="search-page-topbar">
-        <button className="back-btn" onClick={onBack}>← Browse</button>
-      </div>
-
       <div className="search-page-hero">
         <h1 className="search-page-title">Find Free Books</h1>
         <p className="search-page-sub">
