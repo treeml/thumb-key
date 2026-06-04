@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { searchBooks, fetchBooksBySubject } from '../utils/api'
+import { SEEDS } from '../utils/seeds'
 import BookCard from './BookCard'
 
 const CATEGORIES = [
@@ -13,24 +14,26 @@ const CATEGORIES = [
   { label: 'Poetry',     key: 'poetry',     query: 'poetry' },
 ]
 
-// ─── Module-level cache (persisted to localStorage) ──────────────────────────
+// ─── Module-level cache ───────────────────────────────────────────────────────
 const cache     = {}
-const errors    = {}
 const pending   = {}
 const listeners = new Set()
-const CACHE_KEY = 'tome_shelf_v1'
-const CACHE_TTL = 45 * 60 * 1000  // 45 min
+const CACHE_KEY = 'tome_shelf_v2'
+const CACHE_TTL = 60 * 60 * 1000  // 1 hour
 
 function notify() { listeners.forEach(fn => fn()) }
 
-// Warm cache from last session immediately
-;(function warmCache() {
+// 1. Warm from last session
+;(function warmFromStorage() {
   try {
     const raw = localStorage.getItem(CACHE_KEY)
-    if (!raw) return
-    const { data, ts } = JSON.parse(raw)
-    if (Date.now() - ts < CACHE_TTL) Object.assign(cache, data)
+    if (raw) {
+      const { data, ts } = JSON.parse(raw)
+      if (Date.now() - ts < CACHE_TTL) { Object.assign(cache, data); return }
+    }
   } catch {}
+  // 2. Fall back to hardcoded seeds — always available, no network needed
+  Object.assign(cache, SEEDS)
 })()
 
 function persistCache() {
@@ -38,24 +41,26 @@ function persistCache() {
 }
 
 function loadCat(cat) {
-  if (cache[cat.key] || pending[cat.key]) return
+  if (pending[cat.key]) return
   pending[cat.key] = true
+  notify()
   const p = cat.query ? fetchBooksBySubject(cat.query) : searchBooks(null, 1)
   p.then(data => {
-    cache[cat.key]   = data.results || []
-    errors[cat.key]  = null
+    if (data.results?.length > 0) {
+      cache[cat.key] = data.results
+      persistCache()
+    }
     pending[cat.key] = false
-    persistCache()
     notify()
-  }).catch(e => {
-    errors[cat.key]  = e?.message || 'Load failed'
+  }).catch(() => {
+    // API failed — seeds/cache still showing, no error needed
     pending[cat.key] = false
     notify()
   })
 }
 
-// Load immediately for cached categories; stagger fresh fetches at 200ms intervals
-CATEGORIES.forEach((cat, i) => setTimeout(() => loadCat(cat), cache[cat.key] ? 0 : i * 200))
+// Stagger background refreshes — seeds already showing so no rush
+CATEGORIES.forEach((cat, i) => setTimeout(() => loadCat(cat), i * 300))
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ShelfRow({ title, books, onSelect, getProgress, loading, error, onRetry }) {
@@ -110,7 +115,7 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, onOpen
 
   const retryCategory = useCallback((cat) => {
     delete cache[cat.key]
-    delete errors[cat.key]
+    Object.assign(cache, { [cat.key]: SEEDS[cat.key] || [] })
     loadCat(cat)
     rerender(n => n + 1)
   }, [])
@@ -213,8 +218,8 @@ export default function Bookshelf({ onSelectBook, getProgress, myLibrary, onOpen
           books={cache[cat.key] || []}
           onSelect={onSelectBook}
           getProgress={getProgress}
-          loading={!!pending[cat.key] || (!cache[cat.key] && !errors[cat.key])}
-          error={errors[cat.key] || null}
+          loading={!cache[cat.key] && !!pending[cat.key]}
+          error={null}
           onRetry={() => retryCategory(cat)}
         />
       ))}
