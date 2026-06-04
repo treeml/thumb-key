@@ -448,17 +448,12 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       const touch = e.touches[0]
       const adx = Math.abs(touch.clientX - pt.startX)
       const ady = Math.abs(touch.clientY - pt.startY)
-      const wrongDir = (pt.dir === 'fwd' && touch.clientX > pt.startX) ||
-                       (pt.dir === 'bck' && touch.clientX < pt.startX)
 
-      if (wrongDir || ady > adx * 1.8 || ady > 22) {
-        // Vertical or wrong-direction move → cancel, let browser handle (text selection etc.)
-        pendingTurnRef.current = null
-        return
-      }
+      // Only cancel if movement is clearly vertical (scroll), not on any rightward noise
+      if (ady > 36) { pendingTurnRef.current = null; return }
 
-      if (adx > 12 && adx >= ady) {
-        // Confirmed horizontal swipe → commit to page turn drag
+      if (adx > 8) {
+        // Horizontal movement confirmed → commit to drag
         e.preventDefault()
         const curOff = offsetRef.current
         const ph     = pageHRef.current
@@ -467,10 +462,9 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
           ? Math.min(curOff + ph, maxOff)
           : Math.max(curOff - ph, 0)
         setBackLayerOffset(backOff)
-        dragRef.current      = { dir: pt.dir, startX: pt.startX, lastX: touch.clientX }
+        dragRef.current        = { dir: pt.dir, startX: pt.startX, lastX: touch.clientX }
         pendingTurnRef.current = null
       }
-      // else: still undecided — don't preventDefault, let native events through
     }
     el.addEventListener('touchmove', onMove, { passive: false })
     return () => el.removeEventListener('touchmove', onMove)
@@ -513,18 +507,42 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   }, [showAndAutoHideChrome, setChrome])
 
   const handleTouchEnd = useCallback((e) => {
-    pendingTurnRef.current = null  // clear unconfirmed intent regardless
-    const dr = dragRef.current
-    if (!dr) return
+    const pt = pendingTurnRef.current
+    pendingTurnRef.current = null
+
     const x = e.changedTouches[0].clientX
     const w = wrapRef.current?.offsetWidth || window.innerWidth
-    const progress = dr.dir === 'fwd'
-      ? Math.max(0, Math.min(1, (dr.startX - x) / Math.max(dr.startX, 1)))
-      : Math.max(0, Math.min(1, (x - dr.startX) / Math.max(w - dr.startX, 1)))
 
-    const flick = Math.abs(dr.startX - x) >= 50
-    finishDrag(dr.dir, flick ? Math.max(progress, 0.35) : progress)
-  }, [finishDrag])
+    // Normal case: drag was already confirmed in touchmove
+    const dr = dragRef.current
+    if (dr) {
+      const progress = dr.dir === 'fwd'
+        ? Math.max(0, Math.min(1, (dr.startX - x) / Math.max(dr.startX, 1)))
+        : Math.max(0, Math.min(1, (x - dr.startX) / Math.max(w - dr.startX, 1)))
+      const flick = Math.abs(dr.startX - x) >= 50
+      finishDrag(dr.dir, flick ? Math.max(progress, 0.35) : progress)
+      return
+    }
+
+    // Quick-flick: finger lifted before touchmove confirmed the drag.
+    // If the swipe was clearly in the right direction, commit as a full turn.
+    if (pt) {
+      const adx = Math.abs(x - pt.startX)
+      const ady = Math.abs(e.changedTouches[0].clientY - pt.startY)
+      const rightDir = (pt.dir === 'fwd' && x < pt.startX) || (pt.dir === 'bck' && x > pt.startX)
+      if (rightDir && adx > 12 && adx > ady) {
+        const curOff = offsetRef.current
+        const ph     = pageHRef.current
+        const maxOff = Math.max(0, totalHRef.current - ph)
+        const backOff = pt.dir === 'fwd'
+          ? Math.min(curOff + ph, maxOff)
+          : Math.max(curOff - ph, 0)
+        setBackLayerOffset(backOff)
+        dragRef.current = { dir: pt.dir, startX: pt.startX, lastX: x }
+        finishDrag(pt.dir, 0.45)  // animate from rest as a flick
+      }
+    }
+  }, [finishDrag, setBackLayerOffset])
 
   // Keyboard navigation
   useEffect(() => {
