@@ -4,25 +4,9 @@ import { parseFb2 } from '../utils/fb2Parser'
 import { idbSet } from '../utils/idb'
 import { exportBackup, importBackup } from '../utils/backup'
 
-const ACCEPT = '.epub,.fb2,.txt,.mp3,.m4a,.m4b,.ogg,.aac,.flac,.json,application/x-fictionbook+xml,application/x-fictionbook'
+const ACCEPT = '.epub,.fb2,.txt,.json,application/x-fictionbook+xml,application/x-fictionbook'
 
-async function readMetaFromAudio(file) {
-  return new Promise(resolve => {
-    const audio = new Audio()
-    const url   = URL.createObjectURL(file)
-    audio.src   = url
-    audio.onloadedmetadata = () => {
-      URL.revokeObjectURL(url)
-      resolve({ duration: audio.duration })
-    }
-    audio.onerror = () => { URL.revokeObjectURL(url); resolve({ duration: 0 }) }
-    setTimeout(() => { URL.revokeObjectURL(url); resolve({ duration: 0 }) }, 5000)
-  })
-}
-
-const AUDIO_EXTS = ['mp3', 'm4a', 'm4b', 'ogg', 'aac', 'flac', 'wav']
-
-export default function ImportButton({ onBookImported, onAudioImported }) {
+export default function ImportButton({ onBookImported }) {
   const inputRef = useRef(null)
   const [status, setStatus] = useState(null) // null | 'reading' | 'done' | 'error'
   const [msg,    setMsg]    = useState('')
@@ -123,24 +107,6 @@ export default function ImportButton({ onBookImported, onAudioImported }) {
           onBookImported(book)
           setMsg(`✓ Added "${book.title}"`)
 
-        } else if (ext === 'pdf') {
-          setMsg('PDF import coming soon — ePub is recommended for best results.')
-          setStatus('error')
-          await new Promise(r => setTimeout(r, 2500))
-
-        } else if (AUDIO_EXTS.includes(ext)) {
-          setMsg('Reading audio file…')
-          const { duration } = await readMetaFromAudio(file)
-
-          const meta = {
-            title:    file.name.replace(/\.[^.]+$/, ''),
-            author:   '',
-            duration,
-            chapters: [],
-          }
-          onAudioImported(meta, file)
-          setMsg(`✓ Added audio "${meta.title}"`)
-
         } else {
           setMsg(`Unsupported format: .${ext}`)
           setStatus('error')
@@ -177,7 +143,7 @@ export default function ImportButton({ onBookImported, onAudioImported }) {
       <button
         className="import-btn"
         onClick={() => inputRef.current?.click()}
-        title="Import ePub, TXT, audio, or backup JSON"
+        title="Import ePub, FB2, TXT, or backup JSON"
         disabled={status === 'reading'}
       >
         {status === 'reading' ? '…' : '⤵ Import'}
