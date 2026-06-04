@@ -285,7 +285,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       fold.style.left            = `${creaseX}px`
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '0% 50%'
-      fold.style.transform       = `perspective(800px) rotateY(${angle}deg)`
+      fold.style.transform       = `perspective(${Math.round(w * 0.35)}px) rotateY(${angle}deg)`
       fold.style.opacity         = progress < 0.99 ? '1' : '0'
       fold.style.filter          = 'none'
 
@@ -334,7 +334,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       fold.style.left            = '0px'
       fold.style.width           = `${foldW}px`
       fold.style.transformOrigin = '100% 50%'
-      fold.style.transform       = `perspective(800px) rotateY(${-angle}deg)`
+      fold.style.transform       = `perspective(${Math.round(w * 0.35)}px) rotateY(${-angle}deg)`
       fold.style.opacity         = progress < 0.99 ? '1' : '0'
       fold.style.filter          = 'none'
 
