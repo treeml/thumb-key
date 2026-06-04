@@ -44,6 +44,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const [showHighlightPanel, setShowHighlightPanel] = useState(false)
   const [hasSelection, setHasSelection] = useState(false)
   const [autoToc, setAutoToc]     = useState([])
+  const [showChrome, setShowChrome] = useState(false)
   const [pageColorId, setPageColorId] = useState(
     () => localStorage.getItem('tome_page_color') || 'cream'
   )
@@ -74,6 +75,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const hasRestored    = useRef(false)
   const paddingTopRef  = useRef(20)   // measured from DOM; updated in measure()
   const lineHRef       = useRef(33)   // fontSize * 1.85, rounded
+  const showChromeRef  = useRef(false)
+  const chromeTimerRef = useRef(null)
 
   const { highlights, addHighlight, removeHighlight } = useHighlights(book.id)
 
@@ -84,6 +87,37 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   useEffect(() => { pageColorRef.current = pageColor }, [pageColor])
   useEffect(() => { localStorage.setItem('tome_page_color', pageColorId) }, [pageColorId])
   useEffect(() => { localStorage.setItem('tome_font_size', String(fontSize)) }, [fontSize])
+
+  const setChrome = useCallback((val) => {
+    showChromeRef.current = val
+    setShowChrome(val)
+  }, [])
+
+  const showAndAutoHideChrome = useCallback(() => {
+    showChromeRef.current = true
+    setShowChrome(true)
+    if (chromeTimerRef.current) clearTimeout(chromeTimerRef.current)
+    chromeTimerRef.current = setTimeout(() => {
+      showChromeRef.current = false
+      setShowChrome(false)
+    }, 4000)
+  }, [])
+
+  // Keep chrome visible while any panel is open; restart timer when panels close
+  useEffect(() => {
+    if (showMenu || showToc || showHighlightPanel || showRecs || dictWord) {
+      if (chromeTimerRef.current) clearTimeout(chromeTimerRef.current)
+      showChromeRef.current = true
+      setShowChrome(true)
+    } else if (showChromeRef.current) {
+      chromeTimerRef.current = setTimeout(() => {
+        showChromeRef.current = false
+        setShowChrome(false)
+      }, 4000)
+    }
+  }, [showMenu, showToc, showHighlightPanel, showRecs, dictWord])
+
+  useEffect(() => () => { if (chromeTimerRef.current) clearTimeout(chromeTimerRef.current) }, [])
 
   // The active TOC is from the book object (epub/local) or auto-detected for Gutenberg
   const activeToc = (book.toc?.length > 0) ? book.toc : autoToc
@@ -392,6 +426,22 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     if (dragRef.current) return
     if (e.target.closest?.('.reader-menu,.highlights-panel,.recs-panel,.dictionary-popup,.reader-topbar,.reader-nav')) return
 
+    const y = e.touches[0].clientY
+    const h = window.innerHeight
+
+    // Top/bottom 60 px zones → reveal chrome
+    if (y < 60 || y > h - 60) {
+      showAndAutoHideChrome()
+      return
+    }
+
+    // Middle tap while chrome visible → dismiss it, don't turn page
+    if (showChromeRef.current) {
+      setChrome(false)
+      if (chromeTimerRef.current) clearTimeout(chromeTimerRef.current)
+      return
+    }
+
     const x    = e.touches[0].clientX
     const w    = wrapRef.current?.offsetWidth || window.innerWidth
     const curOff = offsetRef.current
@@ -410,7 +460,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     setBackLayerOffset(backOff)
     dragRef.current = { dir, startX: x, lastX: x }
     applyDragVisuals(dir, 0)
-  }, [applyDragVisuals, setBackLayerOffset])
+  }, [applyDragVisuals, setBackLayerOffset, showAndAutoHideChrome, setChrome])
 
   const handleTouchEnd = useCallback((e) => {
     const dr = dragRef.current
@@ -535,8 +585,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Top bar */}
-      <div className="reader-topbar">
+      {/* Top bar — hidden until top-zone tap */}
+      <div className={`reader-topbar${!showChrome ? ' chrome-hidden' : ''}`}>
         <button className="reader-back-btn" onClick={onBack}>← Library</button>
         <div className="reader-book-title-bar">{book.title}</div>
         <div style={{ display: 'flex', gap: 4 }}>
@@ -646,8 +696,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
 
       </div>
 
-      {/* Navigation */}
-      <div className="reader-nav">
+      {/* Navigation — hidden until bottom-zone tap */}
+      <div className={`reader-nav${!showChrome ? ' chrome-hidden' : ''}`}>
         <button className={`nav-btn ${atStart ? 'disabled' : ''}`}
           onClick={() => turnPage('bck')} disabled={atStart}>‹</button>
         <div className="reader-progress-info">
