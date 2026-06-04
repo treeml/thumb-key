@@ -1,8 +1,9 @@
 import React, { useRef, useState } from 'react'
 import { parseEpub } from '../utils/epubParser'
 import { idbSet } from '../utils/idb'
+import { exportBackup, importBackup } from '../utils/backup'
 
-const ACCEPT = '.epub,.txt,.mp3,.m4a,.m4b,.ogg,.aac,.flac'
+const ACCEPT = '.epub,.txt,.mp3,.m4a,.m4b,.ogg,.aac,.flac,.json'
 
 async function readMetaFromAudio(file) {
   return new Promise(resolve => {
@@ -25,6 +26,19 @@ export default function ImportButton({ onBookImported, onAudioImported }) {
   const [status, setStatus] = useState(null) // null | 'reading' | 'done' | 'error'
   const [msg,    setMsg]    = useState('')
 
+  const handleExport = () => {
+    try {
+      const count = exportBackup()
+      setStatus('done')
+      setMsg(`✓ Backup exported (${count} entries)`)
+      setTimeout(() => { setStatus(null); setMsg('') }, 3000)
+    } catch (e) {
+      setStatus('error')
+      setMsg(`Export failed: ${e.message}`)
+      setTimeout(() => { setStatus(null); setMsg('') }, 3000)
+    }
+  }
+
   const handleFiles = async (files) => {
     for (const file of Array.from(files)) {
       const ext = file.name.split('.').pop()?.toLowerCase() || ''
@@ -32,11 +46,19 @@ export default function ImportButton({ onBookImported, onAudioImported }) {
       setMsg(`Importing ${file.name}…`)
 
       try {
-        if (ext === 'epub') {
+        if (ext === 'json') {
+          setMsg('Restoring backup…')
+          const count = await importBackup(file)
+          setStatus('done')
+          setMsg(`✓ Restored ${count} items — reloading…`)
+          await new Promise(r => setTimeout(r, 1800))
+          window.location.reload()
+          return
+
+        } else if (ext === 'epub') {
           setMsg('Parsing ePub…')
           const parsed = await parseEpub(file)
 
-          // Store content in IndexedDB
           const bookId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`
           await idbSet(bookId, { content: parsed.content, contentFormat: parsed.contentFormat })
 
@@ -52,7 +74,6 @@ export default function ImportButton({ onBookImported, onAudioImported }) {
             subjects:      [],
             coverBase64:   parsed.coverBase64,
           }
-          // Cover URL for BookCard
           if (parsed.coverBase64) book.formats['image/jpeg'] = parsed.coverBase64
 
           onBookImported(book)
@@ -96,7 +117,7 @@ export default function ImportButton({ onBookImported, onAudioImported }) {
           setMsg(`✓ Added audio "${meta.title}"`)
 
         } else {
-          setMsg(`Unsupported format: .${ext}. Supported: ePub, TXT, MP3, M4A, M4B`)
+          setMsg(`Unsupported format: .${ext}`)
           setStatus('error')
           await new Promise(r => setTimeout(r, 2500))
           setStatus(null)
@@ -131,10 +152,18 @@ export default function ImportButton({ onBookImported, onAudioImported }) {
       <button
         className="import-btn"
         onClick={() => inputRef.current?.click()}
-        title="Import ePub, TXT, or audio file"
+        title="Import ePub, TXT, audio, or backup JSON"
         disabled={status === 'reading'}
       >
         {status === 'reading' ? '…' : '⤵ Import'}
+      </button>
+      <button
+        className="export-btn"
+        onClick={handleExport}
+        title="Export library backup"
+        disabled={status === 'reading'}
+      >
+        ⤴ Backup
       </button>
       {status && (
         <div className={`import-toast ${status}`}>{msg}</div>
