@@ -13,14 +13,29 @@ const CATEGORIES = [
   { label: 'Poetry',     key: 'poetry',     query: 'poetry' },
 ]
 
-// ─── Module-level cache ───────────────────────────────────────────────────────
-// Lives outside React so it survives component unmount and app backgrounding.
-const cache    = {}   // key → books[]
-const errors   = {}   // key → error string | null
-const pending  = {}   // key → true while in-flight
+// ─── Module-level cache (persisted to localStorage) ──────────────────────────
+const cache     = {}
+const errors    = {}
+const pending   = {}
 const listeners = new Set()
+const CACHE_KEY = 'tome_shelf_v1'
+const CACHE_TTL = 45 * 60 * 1000  // 45 min
 
 function notify() { listeners.forEach(fn => fn()) }
+
+// Warm cache from last session immediately
+;(function warmCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return
+    const { data, ts } = JSON.parse(raw)
+    if (Date.now() - ts < CACHE_TTL) Object.assign(cache, data)
+  } catch {}
+})()
+
+function persistCache() {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data: cache, ts: Date.now() })) } catch {}
+}
 
 function loadCat(cat) {
   if (cache[cat.key] || pending[cat.key]) return
@@ -30,6 +45,7 @@ function loadCat(cat) {
     cache[cat.key]   = data.results || []
     errors[cat.key]  = null
     pending[cat.key] = false
+    persistCache()
     notify()
   }).catch(e => {
     errors[cat.key]  = e?.message || 'Load failed'
@@ -38,9 +54,8 @@ function loadCat(cat) {
   })
 }
 
-// Start loading immediately when this module is first imported.
-// Staggered so we don't hammer the API on cold start.
-CATEGORIES.forEach((cat, i) => setTimeout(() => loadCat(cat), i * 600))
+// Load immediately for cached categories; stagger fresh fetches at 200ms intervals
+CATEGORIES.forEach((cat, i) => setTimeout(() => loadCat(cat), cache[cat.key] ? 0 : i * 200))
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ShelfRow({ title, books, onSelect, getProgress, loading, error, onRetry }) {

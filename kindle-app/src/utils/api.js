@@ -46,8 +46,8 @@ async function capGet(url) {
   const res = await CapacitorHttp.get({
     url,
     headers: { 'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36' },
-    connectTimeout: 12000,
-    readTimeout: 20000,
+    connectTimeout: 8000,
+    readTimeout: 10000,
   })
   if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}`)
   return res.data
@@ -77,18 +77,19 @@ function webFetch(url, timeoutMs) {
 async function getJson(url) {
   const u = normaliseUrl(url)
   if (Capacitor.isNativePlatform()) {
-    // WebView fetch first — browser fingerprinting passes Cloudflare/CDNs
-    try {
-      const res = await webFetch(u, 15000)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return res.json()
-    } catch { /* fall through to native HTTP */ }
-    try {
-      const data = await capGet(u)
-      return typeof data === 'string' ? JSON.parse(data) : data
-    } catch {
-      throw new Error('Could not connect — check your internet and try again')
-    }
+    // Race WebView fetch and CapacitorHttp in parallel — whichever succeeds first wins.
+    // fetch() passes Cloudflare/CDN bot checks; capGet bypasses CORS.
+    // Neither waits for the other to fail, so latency = fastest responder.
+    return new Promise((resolve, reject) => {
+      let failed = 0
+      const onFail = () => { if (++failed === 2) reject(new Error('Could not connect — check your internet and try again')) }
+      webFetch(u, 12000)
+        .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+        .then(resolve).catch(onFail)
+      capGet(u)
+        .then(d => typeof d === 'string' ? JSON.parse(d) : d)
+        .then(resolve).catch(onFail)
+    })
   }
   const res = await fetch(url)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
