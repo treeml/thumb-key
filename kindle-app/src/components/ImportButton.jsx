@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react'
 import { parseEpub } from '../utils/epubParser'
+import { parseFb2 } from '../utils/fb2Parser'
 import { idbSet } from '../utils/idb'
 import { exportBackup, importBackup } from '../utils/backup'
 
-const ACCEPT = '.epub,.txt,.mp3,.m4a,.m4b,.ogg,.aac,.flac,.json'
+const ACCEPT = '.epub,.fb2,.txt,.mp3,.m4a,.m4b,.ogg,.aac,.flac,.json'
 
 async function readMetaFromAudio(file) {
   return new Promise(resolve => {
@@ -70,6 +71,30 @@ export default function ImportButton({ onBookImported, onAudioImported }) {
             contentFormat: parsed.contentFormat,
             source:        'local',
             format:        'epub',
+            formats:       {},
+            subjects:      [],
+            coverBase64:   parsed.coverBase64,
+          }
+          if (parsed.coverBase64) book.formats['image/jpeg'] = parsed.coverBase64
+
+          onBookImported(book)
+          setMsg(`✓ Added "${parsed.title}"`)
+
+        } else if (ext === 'fb2') {
+          setMsg('Parsing FB2…')
+          const parsed = await parseFb2(file)
+
+          const bookId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`
+          await idbSet(bookId, { content: parsed.content, contentFormat: parsed.contentFormat })
+
+          const book = {
+            id:            bookId,
+            title:         parsed.title,
+            authors:       parsed.authors,
+            toc:           parsed.toc,
+            contentFormat: parsed.contentFormat,
+            source:        'local',
+            format:        'fb2',
             formats:       {},
             subjects:      [],
             coverBase64:   parsed.coverBase64,
