@@ -682,43 +682,28 @@ input, textarea { font-family: inherit; }
   .page-text-inner { padding: 20px 18px; }
 }
 
-/* ── Cylinder strip page turn ── */
-.page-cylinder {
-  position: absolute; inset: 0;
-  z-index: 4;
-  pointer-events: none;
-  opacity: 0;
-}
-
-.cyl-strip {
+/* ── Page fold (turning portion) ── */
+.page-fold {
   position: absolute;
   top: 0; bottom: 0;
+  left: 0; width: 0;
+  z-index: 4;
   overflow: hidden;
-  display: none;
-  will-change: left, width;
+  opacity: 0;
+  will-change: transform, width, opacity, left;
 }
-
-.cyl-strip-paper {
-  position: absolute; inset: 0;
-}
-
-.cyl-strip-text {
+.page-paper-fold {
   position: absolute;
+  top: 0; bottom: 0; left: 0; right: 0;
+}
+.page-text-fold {
+  position: absolute !important;
   top: 0;
-  font-family: 'Crimson Pro', Georgia, serif;
-  line-height: 1.85;
-  text-align: justify;
-  hyphens: auto;
-  padding: 32px 44px 32px 48px;
-  will-change: transform;
 }
-@media (max-width: 480px) {
-  .cyl-strip-text { padding: 20px 18px; }
-}
-
-.cyl-strip-shade {
+.fold-curl-overlay {
   position: absolute; inset: 0;
-  pointer-events: none;
+  pointer-events: none; z-index: 2;
+  opacity: 0;
 }
 
 /* Sharp bright highlight at the fold crease — light reflecting off the paper crease point */
