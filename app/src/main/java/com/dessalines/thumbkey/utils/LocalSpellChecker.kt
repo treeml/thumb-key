@@ -33,6 +33,8 @@ class LocalSpellChecker(context: Context) {
      */
     fun getSuggestions(word: String, limit: Int = 3): List<String> {
         val lower = word.lowercase()
+        // Never "correct" contractions — apostrophe words are valid as-is
+        if (lower.contains('\'')) return emptyList()
         if (lower in words) return emptyList()
 
         // Edit distance 1 — fast enough for real-time use

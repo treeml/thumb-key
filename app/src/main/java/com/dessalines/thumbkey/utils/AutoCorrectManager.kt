@@ -99,14 +99,22 @@ class AutoCorrectManager(
         pendingAutocorrect = null
         if (word.length < 2) return
 
-        // Use whatever suggestions are already in the flow (local result is immediate)
+        // Never autocorrect contractions or words the local dictionary already recognises
+        if (word.contains('\'') || localChecker.isCorrect(word)) {
+            clearSuggestions()
+            return
+        }
+
         val suggestions = _suggestions.value
         if (suggestions.isNotEmpty()) {
             val correction = suggestions.first()
+            // Safety guard: only apply if the correction shares the first letter.
+            // This prevents wild substitutions like "adopt" → "coming".
+            val sameFirstLetter = correction.firstOrNull()?.lowercaseChar() ==
+                word.firstOrNull()?.lowercaseChar()
             clearSuggestions()
-            if (correction != word) apply(correction, separator)
+            if (correction != word && sameFirstLetter) apply(correction, separator)
         } else {
-            // Word was already correctly spelled (or too short) — clear and move on
             clearSuggestions()
         }
     }
@@ -142,8 +150,12 @@ class AutoCorrectManager(
             if (pending != null && pending.word == currentWord) {
                 pendingAutocorrect = null
                 val correction = suggestions.firstOrNull()
+                val sameFirst = correction?.firstOrNull()?.lowercaseChar() ==
+                    pending.word.firstOrNull()?.lowercaseChar()
                 clearSuggestions()
-                if (correction != null && correction != pending.word) {
+                if (correction != null && correction != pending.word && sameFirst &&
+                    !pending.word.contains('\'') && !localChecker.isCorrect(pending.word)
+                ) {
                     pending.apply(correction, pending.separator)
                 }
             }
