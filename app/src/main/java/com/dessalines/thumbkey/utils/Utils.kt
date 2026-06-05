@@ -80,6 +80,18 @@ fun extractLastWord(
     return if (word.length >= 2) word else null
 }
 
+fun extractCurrentWord(textBefore: String): String {
+    val sb = StringBuilder()
+    for (char in textBefore.reversed()) {
+        if (char.isLetter() || char == '\'') {
+            sb.insert(0, char)
+        } else {
+            break
+        }
+    }
+    return sb.toString()
+}
+
 fun accelCurve(
     offset: Float,
     threshold: Float,
@@ -366,20 +378,29 @@ fun performKeyAction(
                 1,
             )
 
-            if (autoCorrect && text.isWordSeparator()) {
+            if (autoCorrect) {
                 val textBefore = ime.currentInputConnection.getTextBeforeCursor(200, 0)?.toString()
-                if (textBefore != null) {
-                    val word = extractLastWord(textBefore, text.length)
-                    if (word != null) {
-                        ime.autoCorrectManager.checkWord(word) { corrected ->
-                            val ic = ime.currentInputConnection ?: return@checkWord
-                            val current = ic.getTextBeforeCursor(word.length + text.length, 0)?.toString()
-                            if (current == word + text) {
-                                ic.deleteSurroundingText(word.length + text.length, 0)
-                                ic.commitText(corrected + text, 1)
+                when {
+                    text.isWordSeparator() -> {
+                        val word = if (textBefore != null) extractCurrentWord(textBefore.dropLast(text.length)) else ""
+                        if (word.isNotEmpty()) {
+                            val correction = ime.autoCorrectManager.consumeAutoCorrection(word)
+                            if (correction != null && correction != word) {
+                                val ic = ime.currentInputConnection
+                                ic?.deleteSurroundingText(word.length + text.length, 0)
+                                ic?.commitText(correction + text, 1)
                             }
+                        } else {
+                            ime.autoCorrectManager.clearSuggestions()
                         }
                     }
+                    text.all { it.isLetter() || it == '\'' } -> {
+                        if (textBefore != null) {
+                            val word = extractCurrentWord(textBefore)
+                            ime.autoCorrectManager.requestSuggestions(word)
+                        }
+                    }
+                    else -> ime.autoCorrectManager.clearSuggestions()
                 }
             }
 
@@ -405,6 +426,7 @@ fun performKeyAction(
         is KeyAction.DeleteKeyAction -> {
             val ev = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL)
             ime.currentInputConnection.sendKeyEvent(ev)
+            if (autoCorrect) ime.autoCorrectManager.clearSuggestions()
         }
 
         is KeyAction.DeleteWordBeforeCursor -> {

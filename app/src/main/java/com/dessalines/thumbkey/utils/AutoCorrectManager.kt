@@ -7,14 +7,20 @@ import android.view.textservice.SpellCheckerSession
 import android.view.textservice.SuggestionsInfo
 import android.view.textservice.TextInfo
 import android.view.textservice.TextServicesManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class AutoCorrectManager(
     private val context: Context,
 ) : SpellCheckerSession.SpellCheckerSessionListener {
 
     private var session: SpellCheckerSession? = null
-    private var pendingWord: String? = null
-    private var pendingCallback: ((String) -> Unit)? = null
+    private var lastCheckedWord: String = ""
+    private var lastWordIsTypo: Boolean = false
+
+    private val _suggestions = MutableStateFlow<List<String>>(emptyList())
+    val suggestionsFlow: StateFlow<List<String>> = _suggestions.asStateFlow()
 
     fun init() {
         try {
@@ -31,36 +37,50 @@ class AutoCorrectManager(
         session = null
     }
 
-    fun checkWord(
-        word: String,
-        onSuggestion: (corrected: String) -> Unit,
-    ) {
+    fun requestSuggestions(word: String) {
+        if (word.length < 2) {
+            _suggestions.value = emptyList()
+            return
+        }
+        if (word == lastCheckedWord) return
         val s = session ?: return
-        if (word.length < 2) return
-        pendingWord = word
-        pendingCallback = onSuggestion
+        lastCheckedWord = word
         try {
             s.getSuggestions(TextInfo(word), 3)
         } catch (e: Exception) {
             Log.e(TAG, "AutoCorrectManager: getSuggestions error: $e")
-            pendingWord = null
-            pendingCallback = null
         }
     }
 
-    override fun onGetSuggestions(results: Array<out SuggestionsInfo>?) {
-        val word = pendingWord ?: return
-        val callback = pendingCallback ?: return
-        pendingWord = null
-        pendingCallback = null
+    fun clearSuggestions() {
+        lastCheckedWord = ""
+        lastWordIsTypo = false
+        _suggestions.value = emptyList()
+    }
 
-        val info = results?.firstOrNull() ?: return
+    // Returns the first correction only if the word was a typo, then clears state.
+    fun consumeAutoCorrection(word: String): String? {
+        if (word != lastCheckedWord || !lastWordIsTypo) {
+            clearSuggestions()
+            return null
+        }
+        val correction = _suggestions.value.firstOrNull()
+        clearSuggestions()
+        return correction
+    }
+
+    override fun onGetSuggestions(results: Array<out SuggestionsInfo>?) {
+        val info = results?.firstOrNull() ?: run {
+            _suggestions.value = emptyList()
+            return
+        }
         val isTypo = (info.suggestionsAttributes and SuggestionsInfo.RESULT_ATTR_LOOKS_LIKE_TYPO) != 0
-        if (isTypo && info.suggestionsCount > 0) {
-            val suggestion = SpellCheckerHelper.getFirstSuggestion(info) ?: return
-            if (suggestion.isNotEmpty() && suggestion != word) {
-                callback(suggestion)
-            }
+        lastWordIsTypo = isTypo
+        if (isTypo) {
+            val all = SpellCheckerHelper.getAllSuggestions(info)
+            _suggestions.value = all.filter { it.isNotEmpty() }.take(3).toList()
+        } else {
+            _suggestions.value = emptyList()
         }
     }
 
