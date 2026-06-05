@@ -66,6 +66,15 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = " (DEBUG)"
+            val debugKs = rootProject.file("app/debug.keystore")
+            if (debugKs.exists()) {
+                signingConfig = signingConfigs.create("debugSigning") {
+                    storeFile = debugKs
+                    storePassword = "android"
+                    keyAlias = "androiddebugkey"
+                    keyPassword = "android"
+                }
+            }
         }
     }
 

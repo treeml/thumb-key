@@ -16,13 +16,18 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.dessalines.thumbkey.utils.AutoCorrectManager
 import com.dessalines.thumbkey.utils.TAG
+import com.dessalines.thumbkey.utils.extractCurrentWord
 
 class IMEService :
     InputMethodService(),
     LifecycleOwner,
     ViewModelStoreOwner,
     SavedStateRegistryOwner {
+
+    val autoCorrectManager = AutoCorrectManager(this)
+
     private fun setupView(): View {
         val settingsRepo = (application as ThumbkeyApplication).appSettingsRepository
 
@@ -64,11 +69,13 @@ class IMEService :
         super.onCreate()
         savedStateRegistryController.performRestore(null)
         handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
+        autoCorrectManager.init()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
+        autoCorrectManager.destroy()
     }
 
     // Cursor update Methods
@@ -94,6 +101,17 @@ class IMEService :
     fun ignoreNextCursorMove() {
         // This gets reset on the next call to `onUpdateCursorAnchorInfo`
         ignoreCursorMove = true
+    }
+
+    fun applySuggestion(suggestion: String) {
+        val ic = currentInputConnection ?: return
+        val textBefore = ic.getTextBeforeCursor(200, 0)?.toString() ?: return
+        val word = extractCurrentWord(textBefore)
+        if (word.isEmpty()) return
+        ignoreNextCursorMove()
+        ic.deleteSurroundingText(word.length, 0)
+        ic.commitText(suggestion, 1)
+        autoCorrectManager.clearSuggestions()
     }
 
     private var ignoreCursorMove: Boolean = false

@@ -40,6 +40,7 @@ import com.dessalines.thumbkey.R
 import com.dessalines.thumbkey.db.AppSettingsViewModel
 import com.dessalines.thumbkey.db.BehaviorUpdate
 import com.dessalines.thumbkey.db.DEFAULT_AUTO_CAPITALIZE
+import com.dessalines.thumbkey.db.DEFAULT_AUTO_CORRECT
 import com.dessalines.thumbkey.db.DEFAULT_CIRCULAR_DRAG_ENABLED
 import com.dessalines.thumbkey.db.DEFAULT_CLOCKWISE_DRAG_ACTION
 import com.dessalines.thumbkey.db.DEFAULT_COUNTERCLOCKWISE_DRAG_ACTION
@@ -89,6 +90,7 @@ fun BehaviorScreen(
     var slideSpacebarDeadzoneEnabledState = (settings?.slideSpacebarDeadzoneEnabled ?: DEFAULT_SLIDE_SPACEBAR_DEADZONE_ENABLED).toBool()
     var slideBackspaceDeadzoneEnabledState = (settings?.slideBackspaceDeadzoneEnabled ?: DEFAULT_SLIDE_BACKSPACE_DEADZONE_ENABLED).toBool()
     var autoCapitalizeState = (settings?.autoCapitalize ?: DEFAULT_AUTO_CAPITALIZE).toBool()
+    var autoCorrectState = (settings?.autoCorrect ?: DEFAULT_AUTO_CORRECT).toBool()
     var spacebarMultiTapsState = (settings?.spacebarMultiTaps ?: DEFAULT_SPACEBAR_MULTITAPS).toBool()
 
     var dragReturnEnabledState = (settings?.dragReturnEnabled ?: DEFAULT_DRAG_RETURN_ENABLED).toBool()
@@ -115,6 +117,7 @@ fun BehaviorScreen(
                 slideSpacebarDeadzoneEnabled = slideSpacebarDeadzoneEnabledState.toInt(),
                 slideBackspaceDeadzoneEnabled = slideBackspaceDeadzoneEnabledState.toInt(),
                 autoCapitalize = autoCapitalizeState.toInt(),
+                autoCorrect = autoCorrectState.toInt(),
                 spacebarMultiTaps = spacebarMultiTapsState.toInt(),
                 dragReturnEnabled = dragReturnEnabledState.toInt(),
                 circularDragEnabled = circularDragEnabledState.toInt(),
@@ -151,6 +154,22 @@ fun BehaviorScreen(
                         },
                         title = {
                             Text(stringResource(R.string.auto_capitalize))
+                        },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Abc,
+                                contentDescription = null,
+                            )
+                        },
+                    )
+                    SwitchPreference(
+                        value = autoCorrectState,
+                        onValueChange = {
+                            autoCorrectState = it
+                            updateBehavior()
+                        },
+                        title = {
+                            Text(stringResource(R.string.auto_correct))
                         },
                         icon = {
                             Icon(

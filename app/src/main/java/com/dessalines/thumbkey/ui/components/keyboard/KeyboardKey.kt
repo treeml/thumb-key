@@ -93,6 +93,7 @@ fun KeyboardKey(
     animationHelperSpeed: Int,
     animationSpeed: Int,
     autoCapitalize: Boolean,
+    autoCorrect: Boolean,
     keyboardSettings: KeyboardDefinitionSettings,
     spacebarMultiTaps: Boolean,
     vibrateOnTap: Boolean,
@@ -130,7 +131,7 @@ fun KeyboardKey(
     // Necessary for swipe settings to get updated correctly
     val id =
         key.toString() + ghostKey.toString() + animationHelperSpeed + animationSpeed + autoCapitalize +
-            vibrateOnTap + soundOnTap + legendHeight + legendWidth + minSwipeLength + slideSensitivity +
+            autoCorrect + vibrateOnTap + soundOnTap + legendHeight + legendWidth + minSwipeLength + slideSensitivity +
             slideEnabled + slideCursorMovementMode + slideSpacebarDeadzoneEnabled +
             slideBackspaceDeadzoneEnabled + dragReturnEnabled + circularDragEnabled +
             clockwiseDragAction.ordinal + counterclockwiseDragAction.ordinal
@@ -229,6 +230,7 @@ fun KeyboardKey(
                         action = action,
                         ime = ime,
                         autoCapitalize = autoCapitalize,
+                        autoCorrect = autoCorrect,
                         keyboardSettings = keyboardSettings,
                         onToggleShiftMode = onToggleShiftMode,
                         onToggleNumericMode = onToggleNumericMode,
@@ -246,6 +248,7 @@ fun KeyboardKey(
                             action = action,
                             ime = ime,
                             autoCapitalize = autoCapitalize,
+                            autoCorrect = autoCorrect,
                             keyboardSettings = keyboardSettings,
                             onToggleShiftMode = onToggleShiftMode,
                             onToggleNumericMode = onToggleNumericMode,
@@ -510,6 +513,7 @@ fun KeyboardKey(
                                 action = action,
                                 ime = ime,
                                 autoCapitalize = autoCapitalize,
+                                autoCorrect = autoCorrect,
                                 keyboardSettings = keyboardSettings,
                                 onToggleShiftMode = onToggleShiftMode,
                                 onToggleNumericMode = onToggleNumericMode,
@@ -543,6 +547,7 @@ fun KeyboardKey(
                                         action = action,
                                         ime = ime,
                                         autoCapitalize = autoCapitalize,
+                                        autoCorrect = autoCorrect,
                                         keyboardSettings = keyboardSettings,
                                         onToggleShiftMode = onToggleShiftMode,
                                         onToggleNumericMode = onToggleNumericMode,

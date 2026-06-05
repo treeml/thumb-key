@@ -59,6 +59,39 @@ const val TAG = "com.thumbkey"
 const val IME_ACTION_CUSTOM_LABEL = EditorInfo.IME_MASK_ACTION + 1
 const val ANIMATION_SPEED = 300
 
+fun String.isWordSeparator(): Boolean =
+    this == " " || this == "\n" || this == "." || this == "," ||
+        this == "!" || this == "?" || this == ";" || this == ":"
+
+fun extractLastWord(
+    text: String,
+    separatorLength: Int,
+): String? {
+    val textBeforeSep = text.dropLast(separatorLength)
+    val wordChars = StringBuilder()
+    for (char in textBeforeSep.reversed()) {
+        if (char.isLetter() || char == '\'') {
+            wordChars.insert(0, char)
+        } else {
+            break
+        }
+    }
+    val word = wordChars.toString()
+    return if (word.length >= 2) word else null
+}
+
+fun extractCurrentWord(textBefore: String): String {
+    val sb = StringBuilder()
+    for (char in textBefore.reversed()) {
+        if (char.isLetter() || char == '\'') {
+            sb.insert(0, char)
+        } else {
+            break
+        }
+    }
+    return sb.toString()
+}
+
 fun accelCurve(
     offset: Float,
     threshold: Float,
@@ -325,6 +358,7 @@ fun performKeyAction(
     action: KeyAction,
     ime: IMEService,
     autoCapitalize: Boolean,
+    autoCorrect: Boolean,
     keyboardSettings: KeyboardDefinitionSettings,
     onToggleShiftMode: (enable: Boolean) -> Unit,
     onToggleNumericMode: (enable: Boolean) -> Unit,
@@ -343,6 +377,35 @@ fun performKeyAction(
                 text,
                 1,
             )
+
+            if (autoCorrect) {
+                val textBefore = ime.currentInputConnection.getTextBeforeCursor(200, 0)?.toString()
+                when {
+                    text.isWordSeparator() -> {
+                        val word = if (textBefore != null) extractCurrentWord(textBefore.dropLast(text.length)) else ""
+                        if (word.isNotEmpty()) {
+                            ime.autoCorrectManager.scheduleAutoCorrect(word, text) { correction, sep ->
+                                val ic = ime.currentInputConnection ?: return@scheduleAutoCorrect
+                                val expected = word + sep
+                                val current = ic.getTextBeforeCursor(expected.length, 0)?.toString()
+                                if (current == expected) {
+                                    ic.deleteSurroundingText(expected.length, 0)
+                                    ic.commitText(correction + sep, 1)
+                                }
+                            }
+                        } else {
+                            ime.autoCorrectManager.clearSuggestions()
+                        }
+                    }
+                    text.all { it.isLetter() || it == '\'' } -> {
+                        if (textBefore != null) {
+                            val word = extractCurrentWord(textBefore)
+                            ime.autoCorrectManager.requestSuggestions(word)
+                        }
+                    }
+                    else -> ime.autoCorrectManager.clearSuggestions()
+                }
+            }
 
             if (autoCapitalize) {
                 autoCapitalize(
@@ -366,6 +429,7 @@ fun performKeyAction(
         is KeyAction.DeleteKeyAction -> {
             val ev = KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL)
             ime.currentInputConnection.sendKeyEvent(ev)
+            if (autoCorrect) ime.autoCorrectManager.clearSuggestions()
         }
 
         is KeyAction.DeleteWordBeforeCursor -> {

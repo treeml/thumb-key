@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +36,7 @@ import com.dessalines.thumbkey.db.AppSettings
 import com.dessalines.thumbkey.db.DEFAULT_ANIMATION_HELPER_SPEED
 import com.dessalines.thumbkey.db.DEFAULT_ANIMATION_SPEED
 import com.dessalines.thumbkey.db.DEFAULT_AUTO_CAPITALIZE
+import com.dessalines.thumbkey.db.DEFAULT_AUTO_CORRECT
 import com.dessalines.thumbkey.db.DEFAULT_BACKDROP_ENABLED
 import com.dessalines.thumbkey.db.DEFAULT_CIRCULAR_DRAG_ENABLED
 import com.dessalines.thumbkey.db.DEFAULT_CLOCKWISE_DRAG_ACTION
@@ -124,6 +126,9 @@ fun KeyboardScreen(
     val pushupSizeDp = (settings?.pushupSize ?: DEFAULT_PUSHUP_SIZE).dp
 
     val autoCapitalize = (settings?.autoCapitalize ?: DEFAULT_AUTO_CAPITALIZE).toBool()
+    val autoCorrect = (settings?.autoCorrect ?: DEFAULT_AUTO_CORRECT).toBool()
+    val suggestions by ctx.autoCorrectManager.suggestionsFlow.collectAsState()
+    val currentTypingWord by ctx.autoCorrectManager.currentWordFlow.collectAsState()
     val spacebarMultiTaps = (settings?.spacebarMultiTaps ?: DEFAULT_SPACEBAR_MULTITAPS).toBool()
     val slideEnabled = (settings?.slideEnabled ?: DEFAULT_SLIDE_ENABLED).toBool()
     val slideCursorMovementMode = (settings?.slideCursorMovementMode ?: DEFAULT_SLIDE_CURSOR_MOVEMENT_MODE)
@@ -253,6 +258,7 @@ fun KeyboardScreen(
                                 keyBorderWidth = keyBorderWidthFloat,
                                 keyRadius = cornerRadius,
                                 autoCapitalize = autoCapitalize,
+                                autoCorrect = autoCorrect,
                                 keyboardSettings = keyboardDefinition.settings,
                                 spacebarMultiTaps = spacebarMultiTaps,
                                 vibrateOnTap = vibrateOnTap,
@@ -363,6 +369,15 @@ fun KeyboardScreen(
                             },
                         ),
             ) {
+                if (autoCorrect && currentTypingWord.length >= 2) {
+                    SuggestionBar(
+                        suggestions = suggestions,
+                        currentWord = currentTypingWord,
+                        onSuggestionClick = { suggestion ->
+                            ctx.applySuggestion(suggestion)
+                        },
+                    )
+                }
                 keyboard.arr.forEachIndexed { i, row ->
                     Row {
                         row.forEachIndexed { j, key ->
@@ -389,6 +404,7 @@ fun KeyboardScreen(
                                     keyBorderWidth = keyBorderWidthFloat,
                                     keyRadius = cornerRadius,
                                     autoCapitalize = autoCapitalize,
+                                    autoCorrect = autoCorrect,
                                     keyboardSettings = keyboardDefinition.settings,
                                     spacebarMultiTaps = spacebarMultiTaps,
                                     vibrateOnTap = vibrateOnTap,
