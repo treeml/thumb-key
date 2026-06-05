@@ -128,6 +128,7 @@ fun KeyboardScreen(
     val autoCapitalize = (settings?.autoCapitalize ?: DEFAULT_AUTO_CAPITALIZE).toBool()
     val autoCorrect = (settings?.autoCorrect ?: DEFAULT_AUTO_CORRECT).toBool()
     val suggestions by ctx.autoCorrectManager.suggestionsFlow.collectAsState()
+    val currentTypingWord by ctx.autoCorrectManager.currentWordFlow.collectAsState()
     val spacebarMultiTaps = (settings?.spacebarMultiTaps ?: DEFAULT_SPACEBAR_MULTITAPS).toBool()
     val slideEnabled = (settings?.slideEnabled ?: DEFAULT_SLIDE_ENABLED).toBool()
     val slideCursorMovementMode = (settings?.slideCursorMovementMode ?: DEFAULT_SLIDE_CURSOR_MOVEMENT_MODE)
@@ -368,9 +369,10 @@ fun KeyboardScreen(
                             },
                         ),
             ) {
-                if (autoCorrect && suggestions.isNotEmpty()) {
+                if (autoCorrect && currentTypingWord.length >= 2) {
                     SuggestionBar(
                         suggestions = suggestions,
+                        currentWord = currentTypingWord,
                         onSuggestionClick = { suggestion ->
                             ctx.applySuggestion(suggestion)
                         },

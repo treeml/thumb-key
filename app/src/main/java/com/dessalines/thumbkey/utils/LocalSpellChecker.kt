@@ -24,8 +24,15 @@ class LocalSpellChecker(context: Context) {
         words = HashSet(raw.lines().map { it.trim() }.filter { it.isNotEmpty() })
     }
 
-    /** Returns true when the word is already in the dictionary. */
-    fun isCorrect(word: String) = word.lowercase() in words
+    /** Returns true when the word is in the dictionary or is a contraction. */
+    fun isCorrect(word: String): Boolean {
+        val lower = word.lowercase()
+        return lower.contains('\'') || lower in words
+    }
+
+    /** Returns true when [candidate] is exactly 1 edit away from [word]. */
+    fun isEditDistance1(word: String, candidate: String) =
+        candidate.lowercase() in edits1(word.lowercase())
 
     /**
      * Returns up to [limit] corrections, closest edit distance first.

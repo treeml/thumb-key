@@ -30,12 +30,15 @@ class AutoCorrectManager(
         val apply: (correction: String, separator: String) -> Unit,
     )
 
+    // Correction candidates only (not the original word)
     private val _suggestions = MutableStateFlow<List<String>>(emptyList())
     val suggestionsFlow: StateFlow<List<String>> = _suggestions.asStateFlow()
 
+    // The word currently being typed — exposed so the UI can show it in the middle slot
+    private val _currentWordFlow = MutableStateFlow("")
+    val currentWordFlow: StateFlow<String> = _currentWordFlow.asStateFlow()
+
     fun init() {
-        // Try to get a system spell checker session for richer suggestions.
-        // This is optional — LocalSpellChecker is always available as fallback.
         try {
             val tsm = context.getSystemService(Context.TEXT_SERVICES_MANAGER_SERVICE)
                 as TextServicesManager
@@ -54,24 +57,23 @@ class AutoCorrectManager(
 
     /**
      * Called after each letter is committed. Updates the suggestion bar
-     * immediately using the local dictionary, and also fires off an async
-     * request to the system spell checker if one is available.
+     * immediately using the local dictionary.
      */
     fun requestSuggestions(word: String) {
         if (word.length < 2) {
             currentWord = word
+            _currentWordFlow.value = word
             _suggestions.value = emptyList()
             return
         }
         if (word == currentWord) return
         currentWord = word
+        _currentWordFlow.value = word
 
-        // Immediate local suggestions — no async latency
         val localSuggestions = localChecker.getSuggestions(word)
         _suggestions.value = localSuggestions
         Log.d(TAG, "AutoCorrectManager: local '$word' → $localSuggestions")
 
-        // Also ask the system spell checker (may provide better/richer results)
         session?.let { s ->
             try {
                 s.getSentenceSuggestions(arrayOf(TextInfo(word)), 3)
@@ -84,12 +86,15 @@ class AutoCorrectManager(
     fun clearSuggestions() {
         pendingAutocorrect = null
         currentWord = ""
+        _currentWordFlow.value = ""
         _suggestions.value = emptyList()
     }
 
     /**
-     * Called when a word separator is typed. Applies the best available
-     * correction immediately (local result is always ready synchronously).
+     * Called when a word separator is typed. Auto-applies a correction only when:
+     *  - the word is not a contraction and not already in the dictionary
+     *  - the correction shares the first letter (prevents wild substitutions)
+     *  - the correction is edit-distance-1 (not a speculative ed-2 guess)
      */
     fun scheduleAutoCorrect(
         word: String,
@@ -99,7 +104,6 @@ class AutoCorrectManager(
         pendingAutocorrect = null
         if (word.length < 2) return
 
-        // Never autocorrect contractions or words the local dictionary already recognises
         if (word.contains('\'') || localChecker.isCorrect(word)) {
             clearSuggestions()
             return
@@ -108,18 +112,16 @@ class AutoCorrectManager(
         val suggestions = _suggestions.value
         if (suggestions.isNotEmpty()) {
             val correction = suggestions.first()
-            // Safety guard: only apply if the correction shares the first letter.
-            // This prevents wild substitutions like "adopt" → "coming".
             val sameFirstLetter = correction.firstOrNull()?.lowercaseChar() ==
                 word.firstOrNull()?.lowercaseChar()
+            val isEd1 = localChecker.isEditDistance1(word, correction)
             clearSuggestions()
-            if (correction != word && sameFirstLetter) apply(correction, separator)
+            if (correction != word && sameFirstLetter && isEd1) apply(correction, separator)
         } else {
             clearSuggestions()
         }
     }
 
-    // System spell checker callbacks — may improve on the local result
     override fun onGetSentenceSuggestions(results: Array<out SentenceSuggestionsInfo>?) {
         val sentence = results?.firstOrNull() ?: return
         if (sentence.suggestionsCount == 0) return
@@ -140,20 +142,19 @@ class AutoCorrectManager(
         val suggestions = all.filter { it.isNotEmpty() }.take(3)
         if (suggestions.isEmpty()) return
         Log.d(TAG, "AutoCorrectManager: system suggestions for '$currentWord' → $suggestions")
-        // Post to main thread since system callbacks may arrive on a binder thread
         mainHandler.post {
             if (_suggestions.value != suggestions) {
                 _suggestions.value = suggestions
             }
-            // Apply pending autocorrect if separator was typed before system result arrived
             val pending = pendingAutocorrect
             if (pending != null && pending.word == currentWord) {
                 pendingAutocorrect = null
                 val correction = suggestions.firstOrNull()
                 val sameFirst = correction?.firstOrNull()?.lowercaseChar() ==
                     pending.word.firstOrNull()?.lowercaseChar()
+                val isEd1 = correction != null && localChecker.isEditDistance1(pending.word, correction)
                 clearSuggestions()
-                if (correction != null && correction != pending.word && sameFirst &&
+                if (correction != null && correction != pending.word && sameFirst && isEd1 &&
                     !pending.word.contains('\'') && !localChecker.isCorrect(pending.word)
                 ) {
                     pending.apply(correction, pending.separator)
