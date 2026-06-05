@@ -384,11 +384,14 @@ fun performKeyAction(
                     text.isWordSeparator() -> {
                         val word = if (textBefore != null) extractCurrentWord(textBefore.dropLast(text.length)) else ""
                         if (word.isNotEmpty()) {
-                            val correction = ime.autoCorrectManager.consumeAutoCorrection(word)
-                            if (correction != null && correction != word) {
-                                val ic = ime.currentInputConnection
-                                ic?.deleteSurroundingText(word.length + text.length, 0)
-                                ic?.commitText(correction + text, 1)
+                            ime.autoCorrectManager.scheduleAutoCorrect(word, text) { correction, sep ->
+                                val ic = ime.currentInputConnection ?: return@scheduleAutoCorrect
+                                val expected = word + sep
+                                val current = ic.getTextBeforeCursor(expected.length, 0)?.toString()
+                                if (current == expected) {
+                                    ic.deleteSurroundingText(expected.length, 0)
+                                    ic.commitText(correction + sep, 1)
+                                }
                             }
                         } else {
                             ime.autoCorrectManager.clearSuggestions()
