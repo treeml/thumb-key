@@ -1,6 +1,8 @@
 package com.dessalines.thumbkey.utils
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.textservice.SentenceSuggestionsInfo
 import android.view.textservice.SpellCheckerSession
@@ -15,13 +17,11 @@ class AutoCorrectManager(
     private val context: Context,
 ) : SpellCheckerSession.SpellCheckerSessionListener {
 
+    private val localChecker by lazy { LocalSpellChecker(context) }
     private var session: SpellCheckerSession? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
-    private var lastCheckedWord = ""
-    private var resultArrived = false
-    // True only when the word is flagged as a typo (for auto-apply on separator)
-    private var lastWordIsTypo = false
-
+    private var currentWord = ""
     private var pendingAutocorrect: PendingAutocorrect? = null
 
     private data class PendingAutocorrect(
@@ -34,13 +34,16 @@ class AutoCorrectManager(
     val suggestionsFlow: StateFlow<List<String>> = _suggestions.asStateFlow()
 
     fun init() {
+        // Try to get a system spell checker session for richer suggestions.
+        // This is optional — LocalSpellChecker is always available as fallback.
         try {
             val tsm = context.getSystemService(Context.TEXT_SERVICES_MANAGER_SERVICE)
                 as TextServicesManager
             session = tsm.newSpellCheckerSession(null, null, this, true)
-            Log.d(TAG, "AutoCorrectManager: session=${session != null}")
+                ?: tsm.newSpellCheckerSession(null, null, this, false)
+            Log.d(TAG, "AutoCorrectManager: system spell checker session=${session != null}")
         } catch (e: Exception) {
-            Log.e(TAG, "AutoCorrectManager: init failed: $e")
+            Log.w(TAG, "AutoCorrectManager: system spell checker unavailable: $e")
         }
     }
 
@@ -49,46 +52,44 @@ class AutoCorrectManager(
         session = null
     }
 
+    /**
+     * Called after each letter is committed. Updates the suggestion bar
+     * immediately using the local dictionary, and also fires off an async
+     * request to the system spell checker if one is available.
+     */
     fun requestSuggestions(word: String) {
         if (word.length < 2) {
+            currentWord = word
             _suggestions.value = emptyList()
             return
         }
-        if (word == lastCheckedWord) return
-        val s = session ?: run {
-            Log.w(TAG, "AutoCorrectManager: session is null, skipping requestSuggestions")
-            return
-        }
-        lastCheckedWord = word
-        resultArrived = false
-        try {
-            // getSentenceSuggestions is the non-deprecated API (API 16+).
-            // It fires onGetSentenceSuggestions; we also accept onGetSuggestions as a fallback.
-            s.getSentenceSuggestions(arrayOf(TextInfo(word)), 3)
-        } catch (e: Exception) {
-            Log.e(TAG, "AutoCorrectManager: getSentenceSuggestions error: $e")
-            // Try the older API as fallback
+        if (word == currentWord) return
+        currentWord = word
+
+        // Immediate local suggestions — no async latency
+        val localSuggestions = localChecker.getSuggestions(word)
+        _suggestions.value = localSuggestions
+        Log.d(TAG, "AutoCorrectManager: local '$word' → $localSuggestions")
+
+        // Also ask the system spell checker (may provide better/richer results)
+        session?.let { s ->
             try {
-                s.getSuggestions(TextInfo(word), 3)
-            } catch (e2: Exception) {
-                Log.e(TAG, "AutoCorrectManager: getSuggestions fallback error: $e2")
-                resultArrived = true
+                s.getSentenceSuggestions(arrayOf(TextInfo(word)), 3)
+            } catch (e: Exception) {
+                try { s.getSuggestions(TextInfo(word), 3) } catch (e2: Exception) { /* ignore */ }
             }
         }
     }
 
     fun clearSuggestions() {
         pendingAutocorrect = null
-        lastCheckedWord = ""
-        resultArrived = false
-        lastWordIsTypo = false
+        currentWord = ""
         _suggestions.value = emptyList()
     }
 
     /**
-     * Called when a word separator is typed.
-     * If suggestions are ready: applies correction immediately if word was a typo.
-     * If still waiting: defers until onGetSentenceSuggestions fires.
+     * Called when a word separator is typed. Applies the best available
+     * correction immediately (local result is always ready synchronously).
      */
     fun scheduleAutoCorrect(
         word: String,
@@ -96,77 +97,56 @@ class AutoCorrectManager(
         apply: (correction: String, separator: String) -> Unit,
     ) {
         pendingAutocorrect = null
-        if (word.length < 2 || word != lastCheckedWord) return
+        if (word.length < 2) return
 
-        if (resultArrived) {
-            if (lastWordIsTypo && _suggestions.value.isNotEmpty()) {
-                val correction = _suggestions.value.first()
-                clearSuggestions()
-                if (correction != word) apply(correction, separator)
-            } else {
-                clearSuggestions()
-            }
+        // Use whatever suggestions are already in the flow (local result is immediate)
+        val suggestions = _suggestions.value
+        if (suggestions.isNotEmpty()) {
+            val correction = suggestions.first()
+            clearSuggestions()
+            if (correction != word) apply(correction, separator)
         } else {
-            pendingAutocorrect = PendingAutocorrect(word, separator, apply)
+            // Word was already correctly spelled (or too short) — clear and move on
+            clearSuggestions()
         }
     }
 
-    // Primary callback — fires when getSentenceSuggestions() is used
+    // System spell checker callbacks — may improve on the local result
     override fun onGetSentenceSuggestions(results: Array<out SentenceSuggestionsInfo>?) {
-        resultArrived = true
-        val sentence = results?.firstOrNull()
-        if (sentence == null || sentence.suggestionsCount == 0) {
-            _suggestions.value = emptyList()
-            lastWordIsTypo = false
-            dispatchPending()
-            return
-        }
-        val wordInfo = sentence.getSuggestionsInfoAt(0)
-        processSuggestionsInfo(wordInfo)
+        val sentence = results?.firstOrNull() ?: return
+        if (sentence.suggestionsCount == 0) return
+        val wordInfo = sentence.getSuggestionsInfoAt(0) ?: return
+        handleSystemResult(wordInfo)
     }
 
-    // Fallback callback — fires when getSuggestions() is used
     override fun onGetSuggestions(results: Array<out SuggestionsInfo>?) {
-        resultArrived = true
-        val info = results?.firstOrNull()
-        if (info == null) {
-            _suggestions.value = emptyList()
-            lastWordIsTypo = false
-            dispatchPending()
-            return
-        }
-        processSuggestionsInfo(info)
+        val info = results?.firstOrNull() ?: return
+        handleSystemResult(info)
     }
 
-    private fun processSuggestionsInfo(info: SuggestionsInfo) {
-        val attrs = info.suggestionsAttributes
-        // RESULT_ATTR_LOOKS_LIKE_TYPO = 0x0004
-        // RESULT_ATTR_HAS_RECOMMENDED_SUGGESTIONS = 0x0008 (API 31+)
-        lastWordIsTypo = (attrs and SuggestionsInfo.RESULT_ATTR_LOOKS_LIKE_TYPO) != 0
-
-        if (info.suggestionsCount > 0) {
-            val all = SpellCheckerHelper.getAllSuggestions(info)
-            Log.d(TAG, "AutoCorrectManager: word='$lastCheckedWord' attrs=$attrs isTypo=$lastWordIsTypo suggestions=${all.toList()}")
-            _suggestions.value = all.filter { it.isNotEmpty() }.take(3).toList()
-        } else {
-            Log.d(TAG, "AutoCorrectManager: word='$lastCheckedWord' attrs=$attrs no suggestions")
-            _suggestions.value = emptyList()
-        }
-        dispatchPending()
-    }
-
-    private fun dispatchPending() {
-        val pending = pendingAutocorrect ?: return
-        pendingAutocorrect = null
-        if (pending.word != lastCheckedWord) return
-        if (lastWordIsTypo && _suggestions.value.isNotEmpty()) {
-            val correction = _suggestions.value.first()
-            clearSuggestions()
-            if (correction != pending.word) {
-                pending.apply(correction, pending.separator)
+    private fun handleSystemResult(info: SuggestionsInfo) {
+        if (info.suggestionsCount <= 0) return
+        val isTypo = (info.suggestionsAttributes and SuggestionsInfo.RESULT_ATTR_LOOKS_LIKE_TYPO) != 0
+        if (!isTypo) return
+        val all = SpellCheckerHelper.getAllSuggestions(info)
+        val suggestions = all.filter { it.isNotEmpty() }.take(3)
+        if (suggestions.isEmpty()) return
+        Log.d(TAG, "AutoCorrectManager: system suggestions for '$currentWord' → $suggestions")
+        // Post to main thread since system callbacks may arrive on a binder thread
+        mainHandler.post {
+            if (_suggestions.value != suggestions) {
+                _suggestions.value = suggestions
             }
-        } else {
-            clearSuggestions()
+            // Apply pending autocorrect if separator was typed before system result arrived
+            val pending = pendingAutocorrect
+            if (pending != null && pending.word == currentWord) {
+                pendingAutocorrect = null
+                val correction = suggestions.firstOrNull()
+                clearSuggestions()
+                if (correction != null && correction != pending.word) {
+                    pending.apply(correction, pending.separator)
+                }
+            }
         }
     }
 }
