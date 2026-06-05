@@ -682,36 +682,43 @@ input, textarea { font-family: inherit; }
   .page-text-inner { padding: 20px 18px; }
 }
 
-/* ── 3D fold element — covers the full turning portion of the page ── */
-.page-fold {
+/* ── Cylinder strip page turn ── */
+.page-cylinder {
+  position: absolute; inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.cyl-strip {
   position: absolute;
   top: 0; bottom: 0;
-  left: 0; width: 0;
-  z-index: 4;
   overflow: hidden;
-  opacity: 0;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  will-change: transform, width, opacity, left;
+  display: none;
+  will-change: left, width;
 }
-.page-paper-fold {
-  position: absolute !important;
-  top: 0; bottom: 0;
-  left: 0; right: 0;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-.page-text-fold {
-  position: absolute !important;
-  top: 0;
-  /* left, width, transform all set via DOM ref */
-}
-/* Cylindrical shading gradient — makes the flat element look like curved paper.
-   Background is set dynamically per frame in applyDragVisuals. */
-.fold-curl-overlay {
+
+.cyl-strip-paper {
   position: absolute; inset: 0;
-  pointer-events: none; z-index: 6;
-  opacity: 0;
+}
+
+.cyl-strip-text {
+  position: absolute;
+  top: 0;
+  font-family: 'Crimson Pro', Georgia, serif;
+  line-height: 1.85;
+  text-align: justify;
+  hyphens: auto;
+  padding: 32px 44px 32px 48px;
+  will-change: transform;
+}
+@media (max-width: 480px) {
+  .cyl-strip-text { padding: 20px 18px; }
+}
+
+.cyl-strip-shade {
+  position: absolute; inset: 0;
+  pointer-events: none;
 }
 
 /* Sharp bright highlight at the fold crease — light reflecting off the paper crease point */
