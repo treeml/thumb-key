@@ -6,7 +6,7 @@ import { detectChapters } from '../utils/epubParser'
 import Dictionary from './Dictionary'
 import Recommendations from './Recommendations'
 
-const STRIP_COUNT = 16
+const STRIP_COUNT = 8
 
 const PAGE_PALETTES = [
   { id: 'cream',  bg: '#fdf6e3', text: '#2c1a06', label: 'Cream'  },
@@ -462,7 +462,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const start = performance.now()
     const tick  = (now) => {
       const t = Math.min(1, (now - start) / duration)
-      const e = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2  // ease-in-out cubic
+      const e = 1 - Math.pow(1 - t, 3)  // ease-out cubic
       applyDragVisuals(dir, fromP + (toP - fromP) * e)
       if (t < 1) requestAnimationFrame(tick)
       else onDone?.()
@@ -485,7 +485,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     setBackLayerOffset(next)
     dragRef.current = { dir, startX: dir === 'fwd' ? w : 0, lastX: 0 }
 
-    animateFold(dir, 0, 1, 600, () => {
+    animateFold(dir, 0, 1, 380, () => {
       dragRef.current    = null
       pendingReset.current = true
       setOffset(next)   // triggers re-render → useLayoutEffect resets clips
@@ -502,14 +502,14 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     if (progress >= THRESHOLD) {
       const rawNext = dir === 'fwd' ? Math.min(curOff + ph, maxOff) : Math.max(curOff - ph, 0)
       const next = snapLine(rawNext)
-      const dur  = Math.max(280, (1 - progress) * 700)
+      const dur  = Math.max(160, (1 - progress) * 420)
       animateFold(dir, progress, 1, dur, () => {
         dragRef.current      = null
         pendingReset.current = true
         setOffset(next)
       })
     } else {
-      const dur = Math.max(150, progress * 380)
+      const dur = Math.max(80, progress * 220)
       animateFold(dir, progress, 0, dur, () => {
         dragRef.current = null
         resetDragVisuals()
