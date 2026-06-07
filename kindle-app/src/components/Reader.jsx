@@ -15,6 +15,93 @@ const PAGE_PALETTES = [
   { id: 'dusk',   bg: '#dfe3f0', text: '#101830', label: 'Dusk'   },
 ]
 
+// Draw N=40 cylinder strips onto the canvas for a page-fold animation.
+// dir='fwd'  → crease at creaseX, fold fans rightward
+// dir='bck'  → crease at creaseX, fold fans leftward
+// A = progress * π/2 (fold angle), R = arc-length radius of cylinder
+function drawFoldStrips(ctx, dir, creaseX, foldW, w, h, A, paperBg) {
+  const N   = 40
+  const R   = foldW / Math.max(A, 0.0001)
+  const sinA = Math.sin(A)
+
+  if (dir === 'fwd') {
+    for (let i = 0; i < N; i++) {
+      const phi0 = i * A / N
+      const phi1 = (i + 1) * A / N
+      const phiC = (i + 0.5) * A / N
+      const sx0  = creaseX + R * Math.sin(phi0)
+      const sx1  = creaseX + R * Math.sin(phi1)
+      const dw   = sx1 - sx0
+      if (dw < 0.2) continue
+      ctx.fillStyle = paperBg
+      ctx.fillRect(sx0, 0, dw, h)
+      // Lambertian shading: surface faces viewer at crease (phi=0) → bright, rotates away → dark
+      const shade = (1 - Math.cos(phiC)) * 0.72
+      ctx.fillStyle = `rgba(0,0,0,${shade.toFixed(3)})`
+      ctx.fillRect(sx0, 0, dw, h)
+    }
+    // Bright crease highlight (paper creasing toward viewer)
+    const cg = ctx.createLinearGradient(creaseX, 0, creaseX + 8, 0)
+    cg.addColorStop(0,   'rgba(255,255,255,0.82)')
+    cg.addColorStop(0.4, 'rgba(255,255,255,0.28)')
+    cg.addColorStop(1,   'rgba(255,255,255,0)')
+    ctx.fillStyle = cg
+    ctx.fillRect(creaseX, 0, 8, h)
+    // Paper edge at far end of fold
+    const farEdge = creaseX + R * sinA
+    if (farEdge > 2 && farEdge < w + 2) {
+      ctx.fillStyle = 'rgba(0,0,0,0.22)'
+      ctx.fillRect(Math.max(0, farEdge - 2), 0, 2, h)
+    }
+    // Shadow cast onto visible page left of crease
+    if (creaseX > 0 && sinA > 0.02) {
+      const sw = Math.min(56, creaseX)
+      const sg = ctx.createLinearGradient(Math.max(0, creaseX - sw), 0, creaseX, 0)
+      sg.addColorStop(0, 'rgba(0,0,0,0)')
+      sg.addColorStop(1, `rgba(0,0,0,${(sinA * 0.40).toFixed(3)})`)
+      ctx.fillStyle = sg
+      ctx.fillRect(Math.max(0, creaseX - sw), 0, sw, h)
+    }
+  } else {
+    for (let i = 0; i < N; i++) {
+      const phi0 = i * A / N
+      const phi1 = (i + 1) * A / N
+      const phiC = (i + 0.5) * A / N
+      const sx1  = creaseX - R * Math.sin(phi0)
+      const sx0  = creaseX - R * Math.sin(phi1)
+      const dw   = sx1 - sx0
+      if (dw < 0.2) continue
+      ctx.fillStyle = paperBg
+      ctx.fillRect(sx0, 0, dw, h)
+      const shade = (1 - Math.cos(phiC)) * 0.72
+      ctx.fillStyle = `rgba(0,0,0,${shade.toFixed(3)})`
+      ctx.fillRect(sx0, 0, dw, h)
+    }
+    // Bright crease highlight at right edge of fold
+    const cg = ctx.createLinearGradient(creaseX - 8, 0, creaseX, 0)
+    cg.addColorStop(0,   'rgba(255,255,255,0)')
+    cg.addColorStop(0.6, 'rgba(255,255,255,0.28)')
+    cg.addColorStop(1,   'rgba(255,255,255,0.82)')
+    ctx.fillStyle = cg
+    ctx.fillRect(creaseX - 8, 0, 8, h)
+    // Paper edge at far end of fold
+    const farEdge = creaseX - R * sinA
+    if (farEdge > -2 && farEdge < w - 2) {
+      ctx.fillStyle = 'rgba(0,0,0,0.22)'
+      ctx.fillRect(farEdge, 0, 2, h)
+    }
+    // Shadow cast onto visible page right of crease
+    if (creaseX < w && sinA > 0.02) {
+      const sw = Math.min(56, w - creaseX)
+      const sg = ctx.createLinearGradient(creaseX, 0, Math.min(w, creaseX + sw), 0)
+      sg.addColorStop(0, `rgba(0,0,0,${(sinA * 0.40).toFixed(3)})`)
+      sg.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = sg
+      ctx.fillRect(creaseX, 0, sw, h)
+    }
+  }
+}
+
 function applyHighlights(text, hl) {
   if (!hl.length) return text
   let result = text
@@ -60,10 +147,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const frontInnerRef = useRef(null)  // current page text div (height measurement)
   const backLayerRef  = useRef(null)  // revealed page layer (always full-width, behind)
   const backInnerRef  = useRef(null)  // revealed page text div (transform set via DOM)
-  const foldRef        = useRef(null)
-  const foldInnerRef   = useRef(null)
-  const foldOverlayRef = useRef(null)
-  const foldCreaseRef  = useRef(null)
+  const animCanvasRef  = useRef(null)  // canvas overlay for cylinder page turn
 
   // Value refs — let event handlers read current values without stale closures
   const offsetRef      = useRef(0)
@@ -82,7 +166,6 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const pendingTurnRef = useRef(null)  // { dir, startX, startY } — intent not yet confirmed
   const lastSelRef     = useRef(null)  // last valid selection text (survives tap-to-dismiss)
   const lastSelPosRef  = useRef(null)  // bounding rect centre of last selection
-  const shadowRef      = useRef(null)  // shadow cast by turning page onto flat remaining page
 
   const { highlights, addHighlight, removeHighlight } = useHighlights(book.id)
 
@@ -247,140 +330,59 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   // ─── Page-turn engine ───────────────────────────────────────────────────────
 
   const applyDragVisuals = useCallback((dir, progress) => {
-    const front       = frontLayerRef.current
-    const back        = backLayerRef.current
-    const fold        = foldRef.current
-    const foldInner   = foldInnerRef.current
-    const foldOverlay = foldOverlayRef.current
-    const wrap        = wrapRef.current
-    if (!front || !back || !fold || !wrap) return
+    const front  = frontLayerRef.current
+    const back   = backLayerRef.current
+    const canvas = animCanvasRef.current
+    const wrap   = wrapRef.current
+    if (!front || !back || !canvas || !wrap) return
 
-    const w      = wrap.offsetWidth
-    const curOff = offsetRef.current
-    const fs     = fontSizeRef.current
-    const col    = pageColorRef.current?.text || ''
-    const dr     = dragRef.current
-    const sx     = dr?.startX ?? (dir === 'fwd' ? w : 0)
-    const shadow = shadowRef.current
+    const dpr = window.devicePixelRatio || 1
+    const w   = wrap.offsetWidth
+    const h   = wrap.offsetHeight
+    const bw  = Math.round(w * dpr)
+    const bh  = Math.round(h * dpr)
 
-    const A    = progress * Math.PI / 2
-    const sinA = Math.sin(A)
-    const sin2A = Math.sin(2 * A)  // peaks at 45°, zero at 0° and 90°
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width  = bw
+      canvas.height = bh
+    }
 
-    // Perspective tightness: ~60% of fold width.
-    // Tighter = more compression at far edge, more "bending" look.
-    // Too tight (< 0.25w) looks like a fisheye; too loose (> w) looks like a door.
-    const perspPx = Math.round(w * 0.55)
+    const ctx = canvas.getContext('2d')
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
 
-    // Page-cast shadow on the flat unturned portion
-    const shadowAlpha = (sinA * 0.40).toFixed(2)
-    const shadowW     = Math.min(60, w * 0.16)
+    if (progress <= 0.005) {
+      front.style.clipPath = ''
+      canvas.style.display = 'none'
+      return
+    }
+
+    canvas.style.display = 'block'
+
+    const A       = progress * Math.PI / 2
+    const dr      = dragRef.current
+    const paperBg = pageColorRef.current ? pageColorRef.current.bg : '#1c1208'
 
     if (dir === 'fwd') {
-      const creaseX = sx * (1 - progress)
+      const startX  = dr?.startX ?? w
+      const creaseX = startX * (1 - progress)
       const foldW   = w - creaseX
 
       front.style.clipPath = creaseX > 0.5
         ? `polygon(0 0,${creaseX}px 0,${creaseX}px 100%,0 100%)`
         : 'polygon(0 0,0 0,0 100%,0 100%)'
 
-      if (shadow) {
-        if (progress > 0.02 && creaseX > 1) {
-          const sw = Math.min(shadowW, creaseX)
-          shadow.style.left       = `${Math.max(0, creaseX - sw)}px`
-          shadow.style.width      = `${sw}px`
-          shadow.style.background = `linear-gradient(to left,rgba(0,0,0,${shadowAlpha}) 0%,transparent 100%)`
-          shadow.style.opacity    = '1'
-        } else { shadow.style.opacity = '0' }
-      }
-
-      fold.style.left            = `${creaseX}px`
-      fold.style.width           = `${foldW}px`
-      fold.style.transformOrigin = '0% 50%'
-      fold.style.transform       = `perspective(${perspPx}px) rotateY(${A * 180 / Math.PI}deg)`
-      fold.style.opacity         = progress < 0.99 ? '1' : '0'
-
-      if (foldInner) {
-        foldInner.style.transform = `translateY(-${curOff}px)`
-        foldInner.style.left      = `-${creaseX}px`
-        foldInner.style.width     = `${w}px`
-        foldInner.style.fontSize  = `${fs}px`
-        if (col) foldInner.style.color = col
-      }
-
-      // Multi-stop gradient simulating a cylindrical paper surface:
-      // Shadow at crease → bright highlight at apex → progressive darkening to far edge
-      if (foldOverlay) {
-        const c0  = (sinA  * 0.22).toFixed(3)  // crease shadow
-        const c1  = (sin2A * 0.20).toFixed(3)  // apex highlight (peaks at 45°)
-        const c2  = (sinA  * 0.12).toFixed(3)  // gentle mid darkening
-        const c3  = (sinA  * 0.48).toFixed(3)  // strong far-edge darkening
-        foldOverlay.style.background =
-          `linear-gradient(to right,` +
-          `rgba(0,0,0,${c0}) 0%,` +
-          `rgba(255,255,255,${c1}) 22%,` +
-          `rgba(0,0,0,0) 42%,` +
-          `rgba(0,0,0,${c2}) 62%,` +
-          `rgba(0,0,0,${c3}) 100%)`
-        foldOverlay.style.opacity = '1'
-      }
-
-      if (foldCreaseRef.current) {
-        foldCreaseRef.current.style.left  = '0'
-        foldCreaseRef.current.style.right = 'auto'
-      }
-
+      if (foldW >= 1) drawFoldStrips(ctx, 'fwd', creaseX, foldW, w, h, A, paperBg)
     } else {
-      const creaseX = sx + (w - sx) * progress
+      const startX  = dr?.startX ?? 0
+      const creaseX = startX + (w - startX) * progress
       const foldW   = creaseX
 
       front.style.clipPath = creaseX < w - 0.5
         ? `polygon(${creaseX}px 0,100% 0,100% 100%,${creaseX}px 100%)`
         : 'polygon(100% 0,100% 0,100% 100%,100% 100%)'
 
-      if (shadow) {
-        if (progress > 0.02 && creaseX < w - 1) {
-          const sw = Math.min(shadowW, w - creaseX)
-          shadow.style.left       = `${creaseX}px`
-          shadow.style.width      = `${sw}px`
-          shadow.style.background = `linear-gradient(to right,rgba(0,0,0,${shadowAlpha}) 0%,transparent 100%)`
-          shadow.style.opacity    = '1'
-        } else { shadow.style.opacity = '0' }
-      }
-
-      fold.style.left            = '0px'
-      fold.style.width           = `${foldW}px`
-      fold.style.transformOrigin = '100% 50%'
-      fold.style.transform       = `perspective(${perspPx}px) rotateY(${-A * 180 / Math.PI}deg)`
-      fold.style.opacity         = progress < 0.99 ? '1' : '0'
-
-      if (foldInner) {
-        foldInner.style.transform = `translateY(-${curOff}px)`
-        foldInner.style.left      = '0px'
-        foldInner.style.width     = `${w}px`
-        foldInner.style.fontSize  = `${fs}px`
-        if (col) foldInner.style.color = col
-      }
-
-      if (foldOverlay) {
-        const c0  = (sinA  * 0.22).toFixed(3)
-        const c1  = (sin2A * 0.20).toFixed(3)
-        const c2  = (sinA  * 0.12).toFixed(3)
-        const c3  = (sinA  * 0.48).toFixed(3)
-        foldOverlay.style.background =
-          `linear-gradient(to left,` +
-          `rgba(0,0,0,${c0}) 0%,` +
-          `rgba(255,255,255,${c1}) 22%,` +
-          `rgba(0,0,0,0) 42%,` +
-          `rgba(0,0,0,${c2}) 62%,` +
-          `rgba(0,0,0,${c3}) 100%)`
-        foldOverlay.style.opacity = '1'
-      }
-
-      if (foldCreaseRef.current) {
-        foldCreaseRef.current.style.left  = 'auto'
-        foldCreaseRef.current.style.right = '0'
-      }
+      if (foldW >= 1) drawFoldStrips(ctx, 'bck', creaseX, foldW, w, h, A, paperBg)
     }
 
     back.style.clipPath = ''
@@ -388,13 +390,11 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
 
   const resetDragVisuals = useCallback(() => {
     if (frontLayerRef.current) frontLayerRef.current.style.clipPath = ''
-    if (foldRef.current) {
-      foldRef.current.style.opacity   = '0'
-      foldRef.current.style.transform = ''
-      foldRef.current.style.width     = '0'
+    const canvas = animCanvasRef.current
+    if (canvas) {
+      canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
+      canvas.style.display = 'none'
     }
-    if (foldOverlayRef.current) foldOverlayRef.current.style.background = ''
-    if (shadowRef.current)      shadowRef.current.style.opacity = '0'
   }, [])
 
   // useLayoutEffect runs synchronously after React commits DOM changes.
@@ -816,18 +816,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
           </div>
         </div>
 
-        {/* Layer 3: Shadow cast by the turning page onto the flat remaining old page */}
-        <div className="page-turn-shadow" ref={shadowRef} />
-
-        {/* Layer 4: The turning page fold */}
-        <div className="page-fold" ref={foldRef}>
-          <div className="page-paper page-paper-fold" style={paperStyle}>
-            <div ref={foldInnerRef} className="page-text-inner page-text-fold"
-              dangerouslySetInnerHTML={{ __html: pageContent }} />
-          </div>
-          <div className="fold-curl-overlay" ref={foldOverlayRef} />
-          <div className="fold-crease-highlight" ref={foldCreaseRef} />
-        </div>
+        {/* Canvas overlay: cylinder page turn animation */}
+        <canvas ref={animCanvasRef} className="page-turn-canvas" />
 
       </div>
 

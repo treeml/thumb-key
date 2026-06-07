@@ -632,15 +632,13 @@ input, textarea { font-family: inherit; }
 .page-layer-back  { z-index: 1; }
 .page-layer-front { z-index: 2; will-change: clip-path; }
 
-/* Shadow cast by the turning page onto the flat remaining portion.
-   This is the primary depth cue — without it the fold looks like a flat shape rotating. */
-.page-turn-shadow {
+/* Canvas overlay for cylinder page turn animation */
+.page-turn-canvas {
   position: absolute;
-  top: 0; bottom: 0;
-  z-index: 3;
+  inset: 0;
+  z-index: 4;
   pointer-events: none;
-  opacity: 0;
-  will-change: left, width, opacity, background;
+  display: none;
 }
 
 .page-paper {
@@ -682,43 +680,6 @@ input, textarea { font-family: inherit; }
   .page-text-inner { padding: 20px 18px; }
 }
 
-/* ── Page fold (turning portion) ── */
-.page-fold {
-  position: absolute;
-  top: 0; bottom: 0;
-  left: 0; width: 0;
-  z-index: 4;
-  overflow: hidden;
-  opacity: 0;
-  will-change: transform, width, opacity, left;
-}
-.page-paper-fold {
-  position: absolute;
-  top: 0; bottom: 0; left: 0; right: 0;
-}
-.page-text-fold {
-  position: absolute !important;
-  top: 0;
-}
-.fold-curl-overlay {
-  position: absolute; inset: 0;
-  pointer-events: none; z-index: 2;
-  opacity: 0;
-}
-
-/* Sharp bright highlight at the fold crease — light reflecting off the paper crease point */
-.fold-crease-highlight {
-  position: absolute; top: 0; bottom: 0; left: 0; width: 4px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.12) 70%, transparent 100%);
-  pointer-events: none; z-index: 10;
-}
-
-/* Soft shadow just inside the crease on the back page */
-.fold-edge-shadow {
-  position: absolute; inset: 0; left: 0; width: 28px;
-  background: linear-gradient(90deg, rgba(0,0,0,0.18) 0%, transparent 100%);
-  pointer-events: none; z-index: 5;
-}
 
 /* Page colour swatches */
 .page-color-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
