@@ -630,7 +630,7 @@ input, textarea { font-family: inherit; }
   overflow: hidden;
 }
 .page-layer-back  { z-index: 1; }
-.page-layer-front { z-index: 2; will-change: clip-path; }
+.page-layer-front { z-index: 2; will-change: transform; }
 
 /* Canvas overlay for cylinder page turn animation */
 .page-turn-canvas {

@@ -60,8 +60,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const frontInnerRef = useRef(null)  // current page text div (height measurement)
   const backLayerRef  = useRef(null)  // revealed page layer (always full-width, behind)
   const backInnerRef  = useRef(null)  // revealed page text div (transform set via DOM)
-  const animCanvasRef  = useRef(null)  // canvas overlay for page turn shadow/edge
-  const frontPaperRef  = useRef(null)  // page-paper inside front layer (slides during turn)
+  const animCanvasRef  = useRef(null)  // canvas overlay for page turn edge shadow
 
   // Value refs — let event handlers read current values without stale closures
   const offsetRef      = useRef(0)
@@ -243,18 +242,11 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
 
   // ─── Page-turn engine ───────────────────────────────────────────────────────
 
-  // Cached once: clip-path: path() needs Chrome 88+ / modern WebView
-  const pathClipOK = useRef(
-    typeof CSS !== 'undefined' && CSS.supports('clip-path', "path('M 0 0 Z')")
-  )
-
   const applyDragVisuals = useCallback((dir, progress) => {
     const front  = frontLayerRef.current
-    const back   = backLayerRef.current
     const canvas = animCanvasRef.current
-    const paper  = frontPaperRef.current
     const wrap   = wrapRef.current
-    if (!front || !back || !canvas || !wrap) return
+    if (!front || !canvas || !wrap) return
 
     const dpr = window.devicePixelRatio || 1
     const w   = wrap.offsetWidth
@@ -270,113 +262,89 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     ctx.clearRect(0, 0, w, h)
 
     if (progress <= 0.005) {
-      front.style.clipPath = ''
-      if (paper) paper.style.transform = ''
+      front.style.transform = ''
       canvas.style.display = 'none'
-      back.style.clipPath = ''
       return
     }
 
     canvas.style.display = 'block'
-    back.style.clipPath = ''
 
-    const sinA = Math.sin(progress * Math.PI / 2)
-    // Bow amplitude: peaks at progress=0.5 (sin(π·p) hits max there).
-    // Simulates a flexible sheet bending as it's pulled sideways.
-    const maxBow = Math.min(w * 0.072, 26)
-    const bow    = maxBow * Math.sin(progress * Math.PI)
-    const dr     = dragRef.current
-    const usePathClip = pathClipOK.current
+    // Bow: paper edge lifts slightly at mid-height, peaks at 50% through the turn
+    const bowAmp = Math.min(w * 0.035, 14) * Math.sin(progress * Math.PI)
+    // Shadow alpha ramps up quickly then stays steady
+    const sinP = Math.sin(progress * Math.PI / 2)
 
     if (dir === 'fwd') {
-      const startX  = dr?.startX ?? w
-      const edgeX   = Math.max(0, startX * (1 - progress))
-      // Slide the paper layer slightly left — makes it feel like the sheet is moving
-      const slideX  = progress * w * 0.10
-      if (paper) paper.style.transform = `translateX(-${slideX.toFixed(1)}px)`
+      // Entire front page slides leftward — the sheet slides off the pile
+      front.style.transform = `translateX(${(-progress * w).toFixed(1)}px)`
 
-      // Curved right boundary: bows toward the revealed page (right), peaking at mid-height
-      if (usePathClip && edgeX > 0.5) {
-        const cx = (edgeX + bow).toFixed(1)
-        const cy = (h / 2).toFixed(1)
-        front.style.clipPath = `path('M ${edgeX} 0 Q ${cx} ${cy} ${edgeX} ${h} L 0 ${h} L 0 0 Z')`
-      } else if (edgeX > 0.5) {
-        front.style.clipPath = `polygon(0 0,${edgeX}px 0,${edgeX}px 100%,0 100%)`
-      } else {
-        front.style.clipPath = 'polygon(0 0,0 0,0 100%,0 100%)'
-      }
+      // Trailing edge = right side of the sliding layer
+      const edgeX = w * (1 - progress)
 
-      if (sinA > 0.02) {
-        // Drop shadow on the revealed page stack, clipped to stay right of the curve
+      if (sinP > 0.02 && edgeX < w) {
+        // Shadow falls on back layer, just right of the trailing edge
+        const shadowW = Math.min(52, w - edgeX)
+        if (shadowW > 1) {
+          ctx.save()
+          ctx.beginPath()
+          ctx.moveTo(edgeX, 0)
+          ctx.quadraticCurveTo(edgeX + bowAmp, h / 2, edgeX, h)
+          ctx.lineTo(edgeX + shadowW, h)
+          ctx.lineTo(edgeX + shadowW, 0)
+          ctx.closePath()
+          ctx.clip()
+          const sg = ctx.createLinearGradient(edgeX, 0, edgeX + shadowW, 0)
+          sg.addColorStop(0,   `rgba(0,0,0,${(sinP * 0.38).toFixed(3)})`)
+          sg.addColorStop(0.5, `rgba(0,0,0,${(sinP * 0.10).toFixed(3)})`)
+          sg.addColorStop(1,   'rgba(0,0,0,0)')
+          ctx.fillStyle = sg
+          ctx.fillRect(0, 0, w, h)
+          ctx.restore()
+        }
+        // Bright edge highlight — paper edge catching light as it lifts
         ctx.save()
         ctx.beginPath()
         ctx.moveTo(edgeX, 0)
-        if (usePathClip) ctx.quadraticCurveTo(edgeX + bow, h / 2, edgeX, h)
-        else ctx.lineTo(edgeX, h)
-        ctx.lineTo(w, h)
-        ctx.lineTo(w, 0)
-        ctx.closePath()
-        ctx.clip()
-        const sg = ctx.createLinearGradient(edgeX, 0, edgeX + 60, 0)
-        sg.addColorStop(0, `rgba(0,0,0,${(sinA * 0.42).toFixed(3)})`)
-        sg.addColorStop(0.6, `rgba(0,0,0,${(sinA * 0.10).toFixed(3)})`)
-        sg.addColorStop(1, 'rgba(0,0,0,0)')
-        ctx.fillStyle = sg
-        ctx.fillRect(0, 0, w, h)
-        ctx.restore()
-        // Bright edge — paper edge catching light
-        ctx.save()
-        ctx.beginPath()
-        ctx.moveTo(edgeX, 0)
-        if (usePathClip) ctx.quadraticCurveTo(edgeX + bow, h / 2, edgeX, h)
-        else ctx.lineTo(edgeX, h)
+        ctx.quadraticCurveTo(edgeX + bowAmp, h / 2, edgeX, h)
         ctx.lineWidth = 2.5
-        ctx.strokeStyle = `rgba(255,255,255,${(sinA * 0.75).toFixed(3)})`
+        ctx.strokeStyle = `rgba(255,255,255,${(sinP * 0.55).toFixed(3)})`
         ctx.stroke()
         ctx.restore()
       }
 
     } else {
-      const startX = dr?.startX ?? 0
-      const edgeX  = Math.min(w, startX + (w - startX) * progress)
-      const slideX = progress * w * 0.10
-      if (paper) paper.style.transform = `translateX(${slideX.toFixed(1)}px)`
+      // Entire front page slides rightward — sheet returns to pile from left
+      front.style.transform = `translateX(${(progress * w).toFixed(1)}px)`
 
-      // Curved left boundary: bows toward the revealed page (left), peaking at mid-height
-      if (usePathClip && edgeX < w - 0.5) {
-        const cx = (edgeX - bow).toFixed(1)
-        const cy = (h / 2).toFixed(1)
-        front.style.clipPath = `path('M ${edgeX} 0 Q ${cx} ${cy} ${edgeX} ${h} L ${w} ${h} L ${w} 0 Z')`
-      } else if (edgeX < w - 0.5) {
-        front.style.clipPath = `polygon(${edgeX}px 0,100% 0,100% 100%,${edgeX}px 100%)`
-      } else {
-        front.style.clipPath = 'polygon(100% 0,100% 0,100% 100%,100% 100%)'
-      }
+      // Trailing edge = left side of the sliding layer
+      const edgeX = progress * w
 
-      if (sinA > 0.02) {
+      if (sinP > 0.02 && edgeX > 0) {
+        // Shadow falls on back layer, just left of the trailing edge
+        const shadowW = Math.min(52, edgeX)
+        if (shadowW > 1) {
+          ctx.save()
+          ctx.beginPath()
+          ctx.moveTo(edgeX, 0)
+          ctx.quadraticCurveTo(edgeX - bowAmp, h / 2, edgeX, h)
+          ctx.lineTo(edgeX - shadowW, h)
+          ctx.lineTo(edgeX - shadowW, 0)
+          ctx.closePath()
+          ctx.clip()
+          const sg = ctx.createLinearGradient(edgeX, 0, edgeX - shadowW, 0)
+          sg.addColorStop(0,   `rgba(0,0,0,${(sinP * 0.38).toFixed(3)})`)
+          sg.addColorStop(0.5, `rgba(0,0,0,${(sinP * 0.10).toFixed(3)})`)
+          sg.addColorStop(1,   'rgba(0,0,0,0)')
+          ctx.fillStyle = sg
+          ctx.fillRect(0, 0, w, h)
+          ctx.restore()
+        }
         ctx.save()
         ctx.beginPath()
         ctx.moveTo(edgeX, 0)
-        if (usePathClip) ctx.quadraticCurveTo(edgeX - bow, h / 2, edgeX, h)
-        else ctx.lineTo(edgeX, h)
-        ctx.lineTo(0, h)
-        ctx.lineTo(0, 0)
-        ctx.closePath()
-        ctx.clip()
-        const sg = ctx.createLinearGradient(edgeX, 0, edgeX - 60, 0)
-        sg.addColorStop(0, `rgba(0,0,0,${(sinA * 0.42).toFixed(3)})`)
-        sg.addColorStop(0.6, `rgba(0,0,0,${(sinA * 0.10).toFixed(3)})`)
-        sg.addColorStop(1, 'rgba(0,0,0,0)')
-        ctx.fillStyle = sg
-        ctx.fillRect(0, 0, w, h)
-        ctx.restore()
-        ctx.save()
-        ctx.beginPath()
-        ctx.moveTo(edgeX, 0)
-        if (usePathClip) ctx.quadraticCurveTo(edgeX - bow, h / 2, edgeX, h)
-        else ctx.lineTo(edgeX, h)
+        ctx.quadraticCurveTo(edgeX - bowAmp, h / 2, edgeX, h)
         ctx.lineWidth = 2.5
-        ctx.strokeStyle = `rgba(255,255,255,${(sinA * 0.75).toFixed(3)})`
+        ctx.strokeStyle = `rgba(255,255,255,${(sinP * 0.55).toFixed(3)})`
         ctx.stroke()
         ctx.restore()
       }
@@ -384,8 +352,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   }, [])
 
   const resetDragVisuals = useCallback(() => {
-    if (frontLayerRef.current) frontLayerRef.current.style.clipPath = ''
-    if (frontPaperRef.current) frontPaperRef.current.style.transform = ''
+    if (frontLayerRef.current) frontLayerRef.current.style.transform = ''
     const canvas = animCanvasRef.current
     if (canvas) {
       canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
@@ -802,9 +769,9 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
           </div>
         </div>
 
-        {/* Layer 2: Current page — clipped to unturned portion */}
+        {/* Layer 2: Current page — slides laterally during page turn */}
         <div className="page-layer page-layer-front" ref={frontLayerRef}>
-          <div className="page-paper" ref={frontPaperRef} style={paperStyle}>
+          <div className="page-paper" style={paperStyle}>
             <div className="binding-shadow" />
             <div ref={frontInnerRef} className="page-text-inner"
               style={frontStyle}
