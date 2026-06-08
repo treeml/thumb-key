@@ -15,93 +15,6 @@ const PAGE_PALETTES = [
   { id: 'dusk',   bg: '#dfe3f0', text: '#101830', label: 'Dusk'   },
 ]
 
-// Draw N=40 cylinder strips onto the canvas for a page-fold animation.
-// dir='fwd'  → crease at creaseX, fold fans rightward
-// dir='bck'  → crease at creaseX, fold fans leftward
-// A = progress * π/2 (fold angle), R = arc-length radius of cylinder
-function drawFoldStrips(ctx, dir, creaseX, foldW, w, h, A, paperBg) {
-  const N   = 40
-  const R   = foldW / Math.max(A, 0.0001)
-  const sinA = Math.sin(A)
-
-  if (dir === 'fwd') {
-    for (let i = 0; i < N; i++) {
-      const phi0 = i * A / N
-      const phi1 = (i + 1) * A / N
-      const phiC = (i + 0.5) * A / N
-      const sx0  = creaseX + R * Math.sin(phi0)
-      const sx1  = creaseX + R * Math.sin(phi1)
-      const dw   = sx1 - sx0
-      if (dw < 0.2) continue
-      ctx.fillStyle = paperBg
-      ctx.fillRect(sx0, 0, dw, h)
-      // Lambertian shading: surface faces viewer at crease (phi=0) → bright, rotates away → dark
-      const shade = (1 - Math.cos(phiC)) * 0.72
-      ctx.fillStyle = `rgba(0,0,0,${shade.toFixed(3)})`
-      ctx.fillRect(sx0, 0, dw, h)
-    }
-    // Bright crease highlight (paper creasing toward viewer)
-    const cg = ctx.createLinearGradient(creaseX, 0, creaseX + 8, 0)
-    cg.addColorStop(0,   'rgba(255,255,255,0.82)')
-    cg.addColorStop(0.4, 'rgba(255,255,255,0.28)')
-    cg.addColorStop(1,   'rgba(255,255,255,0)')
-    ctx.fillStyle = cg
-    ctx.fillRect(creaseX, 0, 8, h)
-    // Paper edge at far end of fold
-    const farEdge = creaseX + R * sinA
-    if (farEdge > 2 && farEdge < w + 2) {
-      ctx.fillStyle = 'rgba(0,0,0,0.22)'
-      ctx.fillRect(Math.max(0, farEdge - 2), 0, 2, h)
-    }
-    // Shadow cast onto visible page left of crease
-    if (creaseX > 0 && sinA > 0.02) {
-      const sw = Math.min(56, creaseX)
-      const sg = ctx.createLinearGradient(Math.max(0, creaseX - sw), 0, creaseX, 0)
-      sg.addColorStop(0, 'rgba(0,0,0,0)')
-      sg.addColorStop(1, `rgba(0,0,0,${(sinA * 0.40).toFixed(3)})`)
-      ctx.fillStyle = sg
-      ctx.fillRect(Math.max(0, creaseX - sw), 0, sw, h)
-    }
-  } else {
-    for (let i = 0; i < N; i++) {
-      const phi0 = i * A / N
-      const phi1 = (i + 1) * A / N
-      const phiC = (i + 0.5) * A / N
-      const sx1  = creaseX - R * Math.sin(phi0)
-      const sx0  = creaseX - R * Math.sin(phi1)
-      const dw   = sx1 - sx0
-      if (dw < 0.2) continue
-      ctx.fillStyle = paperBg
-      ctx.fillRect(sx0, 0, dw, h)
-      const shade = (1 - Math.cos(phiC)) * 0.72
-      ctx.fillStyle = `rgba(0,0,0,${shade.toFixed(3)})`
-      ctx.fillRect(sx0, 0, dw, h)
-    }
-    // Bright crease highlight at right edge of fold
-    const cg = ctx.createLinearGradient(creaseX - 8, 0, creaseX, 0)
-    cg.addColorStop(0,   'rgba(255,255,255,0)')
-    cg.addColorStop(0.6, 'rgba(255,255,255,0.28)')
-    cg.addColorStop(1,   'rgba(255,255,255,0.82)')
-    ctx.fillStyle = cg
-    ctx.fillRect(creaseX - 8, 0, 8, h)
-    // Paper edge at far end of fold
-    const farEdge = creaseX - R * sinA
-    if (farEdge > -2 && farEdge < w - 2) {
-      ctx.fillStyle = 'rgba(0,0,0,0.22)'
-      ctx.fillRect(farEdge, 0, 2, h)
-    }
-    // Shadow cast onto visible page right of crease
-    if (creaseX < w && sinA > 0.02) {
-      const sw = Math.min(56, w - creaseX)
-      const sg = ctx.createLinearGradient(creaseX, 0, Math.min(w, creaseX + sw), 0)
-      sg.addColorStop(0, `rgba(0,0,0,${(sinA * 0.40).toFixed(3)})`)
-      sg.addColorStop(1, 'rgba(0,0,0,0)')
-      ctx.fillStyle = sg
-      ctx.fillRect(creaseX, 0, sw, h)
-    }
-  }
-}
-
 function applyHighlights(text, hl) {
   if (!hl.length) return text
   let result = text
@@ -147,7 +60,8 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   const frontInnerRef = useRef(null)  // current page text div (height measurement)
   const backLayerRef  = useRef(null)  // revealed page layer (always full-width, behind)
   const backInnerRef  = useRef(null)  // revealed page text div (transform set via DOM)
-  const animCanvasRef  = useRef(null)  // canvas overlay for cylinder page turn
+  const animCanvasRef  = useRef(null)  // canvas overlay for page turn shadow/edge
+  const frontPaperRef  = useRef(null)  // page-paper inside front layer (slides during turn)
 
   // Value refs — let event handlers read current values without stale closures
   const offsetRef      = useRef(0)
@@ -329,10 +243,16 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
 
   // ─── Page-turn engine ───────────────────────────────────────────────────────
 
+  // Cached once: clip-path: path() needs Chrome 88+ / modern WebView
+  const pathClipOK = useRef(
+    typeof CSS !== 'undefined' && CSS.supports('clip-path', "path('M 0 0 Z')")
+  )
+
   const applyDragVisuals = useCallback((dir, progress) => {
     const front  = frontLayerRef.current
     const back   = backLayerRef.current
     const canvas = animCanvasRef.current
+    const paper  = frontPaperRef.current
     const wrap   = wrapRef.current
     if (!front || !back || !canvas || !wrap) return
 
@@ -341,55 +261,131 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     const h   = wrap.offsetHeight
     const bw  = Math.round(w * dpr)
     const bh  = Math.round(h * dpr)
-
     if (canvas.width !== bw || canvas.height !== bh) {
       canvas.width  = bw
       canvas.height = bh
     }
-
     const ctx = canvas.getContext('2d')
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, w, h)
 
     if (progress <= 0.005) {
       front.style.clipPath = ''
+      if (paper) paper.style.transform = ''
       canvas.style.display = 'none'
+      back.style.clipPath = ''
       return
     }
 
     canvas.style.display = 'block'
+    back.style.clipPath = ''
 
-    const A       = progress * Math.PI / 2
-    const dr      = dragRef.current
-    const paperBg = pageColorRef.current ? pageColorRef.current.bg : '#1c1208'
+    const sinA = Math.sin(progress * Math.PI / 2)
+    // Bow amplitude: peaks at progress=0.5 (sin(π·p) hits max there).
+    // Simulates a flexible sheet bending as it's pulled sideways.
+    const maxBow = Math.min(w * 0.072, 26)
+    const bow    = maxBow * Math.sin(progress * Math.PI)
+    const dr     = dragRef.current
+    const usePathClip = pathClipOK.current
 
     if (dir === 'fwd') {
       const startX  = dr?.startX ?? w
-      const creaseX = startX * (1 - progress)
-      const foldW   = w - creaseX
+      const edgeX   = Math.max(0, startX * (1 - progress))
+      // Slide the paper layer slightly left — makes it feel like the sheet is moving
+      const slideX  = progress * w * 0.10
+      if (paper) paper.style.transform = `translateX(-${slideX.toFixed(1)}px)`
 
-      front.style.clipPath = creaseX > 0.5
-        ? `polygon(0 0,${creaseX}px 0,${creaseX}px 100%,0 100%)`
-        : 'polygon(0 0,0 0,0 100%,0 100%)'
+      // Curved right boundary: bows toward the revealed page (right), peaking at mid-height
+      if (usePathClip && edgeX > 0.5) {
+        const cx = (edgeX + bow).toFixed(1)
+        const cy = (h / 2).toFixed(1)
+        front.style.clipPath = `path('M ${edgeX} 0 Q ${cx} ${cy} ${edgeX} ${h} L 0 ${h} L 0 0 Z')`
+      } else if (edgeX > 0.5) {
+        front.style.clipPath = `polygon(0 0,${edgeX}px 0,${edgeX}px 100%,0 100%)`
+      } else {
+        front.style.clipPath = 'polygon(0 0,0 0,0 100%,0 100%)'
+      }
 
-      if (foldW >= 1) drawFoldStrips(ctx, 'fwd', creaseX, foldW, w, h, A, paperBg)
+      if (sinA > 0.02) {
+        // Drop shadow on the revealed page stack, clipped to stay right of the curve
+        ctx.save()
+        ctx.beginPath()
+        ctx.moveTo(edgeX, 0)
+        if (usePathClip) ctx.quadraticCurveTo(edgeX + bow, h / 2, edgeX, h)
+        else ctx.lineTo(edgeX, h)
+        ctx.lineTo(w, h)
+        ctx.lineTo(w, 0)
+        ctx.closePath()
+        ctx.clip()
+        const sg = ctx.createLinearGradient(edgeX, 0, edgeX + 60, 0)
+        sg.addColorStop(0, `rgba(0,0,0,${(sinA * 0.42).toFixed(3)})`)
+        sg.addColorStop(0.6, `rgba(0,0,0,${(sinA * 0.10).toFixed(3)})`)
+        sg.addColorStop(1, 'rgba(0,0,0,0)')
+        ctx.fillStyle = sg
+        ctx.fillRect(0, 0, w, h)
+        ctx.restore()
+        // Bright edge — paper edge catching light
+        ctx.save()
+        ctx.beginPath()
+        ctx.moveTo(edgeX, 0)
+        if (usePathClip) ctx.quadraticCurveTo(edgeX + bow, h / 2, edgeX, h)
+        else ctx.lineTo(edgeX, h)
+        ctx.lineWidth = 2.5
+        ctx.strokeStyle = `rgba(255,255,255,${(sinA * 0.75).toFixed(3)})`
+        ctx.stroke()
+        ctx.restore()
+      }
+
     } else {
-      const startX  = dr?.startX ?? 0
-      const creaseX = startX + (w - startX) * progress
-      const foldW   = creaseX
+      const startX = dr?.startX ?? 0
+      const edgeX  = Math.min(w, startX + (w - startX) * progress)
+      const slideX = progress * w * 0.10
+      if (paper) paper.style.transform = `translateX(${slideX.toFixed(1)}px)`
 
-      front.style.clipPath = creaseX < w - 0.5
-        ? `polygon(${creaseX}px 0,100% 0,100% 100%,${creaseX}px 100%)`
-        : 'polygon(100% 0,100% 0,100% 100%,100% 100%)'
+      // Curved left boundary: bows toward the revealed page (left), peaking at mid-height
+      if (usePathClip && edgeX < w - 0.5) {
+        const cx = (edgeX - bow).toFixed(1)
+        const cy = (h / 2).toFixed(1)
+        front.style.clipPath = `path('M ${edgeX} 0 Q ${cx} ${cy} ${edgeX} ${h} L ${w} ${h} L ${w} 0 Z')`
+      } else if (edgeX < w - 0.5) {
+        front.style.clipPath = `polygon(${edgeX}px 0,100% 0,100% 100%,${edgeX}px 100%)`
+      } else {
+        front.style.clipPath = 'polygon(100% 0,100% 0,100% 100%,100% 100%)'
+      }
 
-      if (foldW >= 1) drawFoldStrips(ctx, 'bck', creaseX, foldW, w, h, A, paperBg)
+      if (sinA > 0.02) {
+        ctx.save()
+        ctx.beginPath()
+        ctx.moveTo(edgeX, 0)
+        if (usePathClip) ctx.quadraticCurveTo(edgeX - bow, h / 2, edgeX, h)
+        else ctx.lineTo(edgeX, h)
+        ctx.lineTo(0, h)
+        ctx.lineTo(0, 0)
+        ctx.closePath()
+        ctx.clip()
+        const sg = ctx.createLinearGradient(edgeX, 0, edgeX - 60, 0)
+        sg.addColorStop(0, `rgba(0,0,0,${(sinA * 0.42).toFixed(3)})`)
+        sg.addColorStop(0.6, `rgba(0,0,0,${(sinA * 0.10).toFixed(3)})`)
+        sg.addColorStop(1, 'rgba(0,0,0,0)')
+        ctx.fillStyle = sg
+        ctx.fillRect(0, 0, w, h)
+        ctx.restore()
+        ctx.save()
+        ctx.beginPath()
+        ctx.moveTo(edgeX, 0)
+        if (usePathClip) ctx.quadraticCurveTo(edgeX - bow, h / 2, edgeX, h)
+        else ctx.lineTo(edgeX, h)
+        ctx.lineWidth = 2.5
+        ctx.strokeStyle = `rgba(255,255,255,${(sinA * 0.75).toFixed(3)})`
+        ctx.stroke()
+        ctx.restore()
+      }
     }
-
-    back.style.clipPath = ''
   }, [])
 
   const resetDragVisuals = useCallback(() => {
     if (frontLayerRef.current) frontLayerRef.current.style.clipPath = ''
+    if (frontPaperRef.current) frontPaperRef.current.style.transform = ''
     const canvas = animCanvasRef.current
     if (canvas) {
       canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height)
@@ -808,7 +804,7 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
 
         {/* Layer 2: Current page — clipped to unturned portion */}
         <div className="page-layer page-layer-front" ref={frontLayerRef}>
-          <div className="page-paper" style={paperStyle}>
+          <div className="page-paper" ref={frontPaperRef} style={paperStyle}>
             <div className="binding-shadow" />
             <div ref={frontInnerRef} className="page-text-inner"
               style={frontStyle}
