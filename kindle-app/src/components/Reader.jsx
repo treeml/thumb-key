@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback, useLayoutEffect } from 'react'
+import React, { useEffect, useState, useRef, useCallback, useLayoutEffect, useMemo } from 'react'
 import { App as CapApp } from '@capacitor/app'
 import { fetchBookText } from '../utils/api'
 import { useHighlights } from '../hooks/useHighlights'
@@ -124,21 +124,23 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
   // The active TOC is from the book object (epub/local) or auto-detected for Gutenberg
   const activeToc = (book.toc?.length > 0) ? book.toc : autoToc
 
-  // Load text
+  // Load text — cancelled flag prevents stale async updates when book.id changes mid-flight
   useEffect(() => {
+    let cancelled = false
     setLoading(true); setError(null); setOffset(0); setAutoToc([])
     hasRestored.current = false
     fetchBookText(book)
       .then(text => {
+        if (cancelled) return
         setFullText(text)
-        // Auto-detect chapters for plain-text books
         if (book.contentFormat !== 'html' && book.source !== 'local') {
           const chapters = detectChapters(text)
           if (chapters.length > 1) setAutoToc(chapters)
         }
       })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
+      .catch(e => { if (!cancelled) setError(e.message) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [book.id])
 
   // Measure using the page LAYER (not wrap) so padding is excluded
@@ -639,11 +641,10 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
     setShowHighlightPanel(false)
   }, [])
 
-  // Reflow plain-text (Gutenberg) or pass-through HTML (epub/local)
-  const pageContent = (() => {
+  // Memoized: reprocessing the entire book text through regex on every render is expensive
+  const pageContent = useMemo(() => {
     const raw = applyHighlights(fullText, highlights)
-    if (book.contentFormat === 'html') return raw  // ePub: use HTML as-is
-    // Plain text: split on blank lines, collapse single newlines
+    if (book.contentFormat === 'html') return raw
     return raw
       .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
       .split(/\n{2,}/)
@@ -653,10 +654,16 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
       })
       .filter(Boolean)
       .join('')
-  })()
+  }, [fullText, highlights, book.contentFormat])
 
-  const paperStyle = pageColor ? { background: pageColor.bg, color: pageColor.text } : undefined
-  const frontStyle = { transform: `translateY(-${offset}px)`, fontSize }
+  const paperStyle = useMemo(
+    () => pageColor ? { background: pageColor.bg, color: pageColor.text } : undefined,
+    [pageColor]
+  )
+  const frontStyle = useMemo(
+    () => ({ transform: `translateY(-${offset}px)`, fontSize }),
+    [offset, fontSize]
+  )
 
   if (loading) return (
     <div className={`reader-loading ${nightMode ? 'night' : ''}`}>

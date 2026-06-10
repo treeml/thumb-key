@@ -6,20 +6,6 @@ const DICT_API        = 'https://api.dictionaryapi.dev/api/v2/entries/en'
 const OPEN_LIBRARY    = 'https://openlibrary.org'
 const INTERNET_ARCHIVE = 'https://archive.org'
 
-function xhrGet(url) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('GET', url, true)
-    xhr.timeout = 15000
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve(xhr.responseText)
-      else reject(new Error(`XHR ${xhr.status}`))
-    }
-    xhr.onerror = () => reject(new Error('XHR network error'))
-    xhr.ontimeout = () => reject(new Error('XHR timeout'))
-    xhr.send()
-  })
-}
 
 function isHtmlResponse(text) {
   const t = (text || '').trimStart()

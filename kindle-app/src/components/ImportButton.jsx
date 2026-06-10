@@ -6,6 +6,23 @@ import { exportBackup, importBackup } from '../utils/backup'
 
 const ACCEPT = '.epub,.fb2,.txt,.json,application/x-fictionbook+xml,application/x-fictionbook'
 
+function makeLocalBook(bookId, parsed, format) {
+  const book = {
+    id:            bookId,
+    title:         parsed.title,
+    authors:       parsed.authors,
+    toc:           parsed.toc || [],
+    contentFormat: parsed.contentFormat,
+    source:        'local',
+    format,
+    formats:       {},
+    subjects:      [],
+    coverBase64:   parsed.coverBase64,
+  }
+  if (parsed.coverBase64) book.formats['image/jpeg'] = parsed.coverBase64
+  return book
+}
+
 export default function ImportButton({ onBookImported }) {
   const inputRef = useRef(null)
   const [status, setStatus] = useState(null) // null | 'reading' | 'done' | 'error'
@@ -40,51 +57,14 @@ export default function ImportButton({ onBookImported }) {
           window.location.reload()
           return
 
-        } else if (ext === 'epub') {
-          setMsg('Parsing ePub…')
-          const parsed = await parseEpub(file)
+        } else if (ext === 'epub' || ext === 'fb2') {
+          setMsg(ext === 'epub' ? 'Parsing ePub…' : 'Parsing FB2…')
+          const parsed = await (ext === 'epub' ? parseEpub(file) : parseFb2(file))
 
           const bookId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`
           await idbSet(bookId, { content: parsed.content, contentFormat: parsed.contentFormat })
 
-          const book = {
-            id:            bookId,
-            title:         parsed.title,
-            authors:       parsed.authors,
-            toc:           parsed.toc,
-            contentFormat: parsed.contentFormat,
-            source:        'local',
-            format:        'epub',
-            formats:       {},
-            subjects:      [],
-            coverBase64:   parsed.coverBase64,
-          }
-          if (parsed.coverBase64) book.formats['image/jpeg'] = parsed.coverBase64
-
-          onBookImported(book)
-          setMsg(`✓ Added "${parsed.title}"`)
-
-        } else if (ext === 'fb2') {
-          setMsg('Parsing FB2…')
-          const parsed = await parseFb2(file)
-
-          const bookId = `local_${Date.now()}_${Math.random().toString(36).slice(2)}`
-          await idbSet(bookId, { content: parsed.content, contentFormat: parsed.contentFormat })
-
-          const book = {
-            id:            bookId,
-            title:         parsed.title,
-            authors:       parsed.authors,
-            toc:           parsed.toc,
-            contentFormat: parsed.contentFormat,
-            source:        'local',
-            format:        'fb2',
-            formats:       {},
-            subjects:      [],
-            coverBase64:   parsed.coverBase64,
-          }
-          if (parsed.coverBase64) book.formats['image/jpeg'] = parsed.coverBase64
-
+          const book = makeLocalBook(bookId, parsed, ext)
           onBookImported(book)
           setMsg(`✓ Added "${parsed.title}"`)
 

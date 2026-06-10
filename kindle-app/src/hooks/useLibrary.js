@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 
 const STORAGE_KEY = 'tome_library'
 
@@ -55,13 +55,18 @@ export function useLibrary() {
     }))
   }, [updateLibrary])
 
-  const books = Object.values(library).sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0))
+  const books = useMemo(
+    () => Object.values(library).sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0)),
+    [library]
+  )
 
-  // Currently-reading: progress 1-99%, not shelved, sorted by most-recently-read
-  const readingNow = Object.values(library)
-    .filter(b => (b.progress || 0) > 0 && (b.progress || 0) < 100 && !b.shelved)
-    .sort((a, b) => (b.lastRead || b.addedAt || 0) - (a.lastRead || a.addedAt || 0))
-    .slice(0, 4)
+  const readingNow = useMemo(
+    () => Object.values(library)
+      .filter(b => (b.progress || 0) > 0 && (b.progress || 0) < 100 && !b.shelved)
+      .sort((a, b) => (b.lastRead || b.addedAt || 0) - (a.lastRead || a.addedAt || 0))
+      .slice(0, 4),
+    [library]
+  )
 
   return { books, readingNow, addBook, removeBook, hasBook, setProgress, getProgress, shelveBook }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react'
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { hashId } from '../utils/api'
 
 const SPINE_PALETTES = [
@@ -16,9 +16,15 @@ const SPINE_PALETTES = [
   { base: '#00695C', read: '#4db6ac' }, { base: '#827717', read: '#dce775' },
 ]
 
-function bookPalette(id) { const n = hashId(id); return SPINE_PALETTES[n % SPINE_PALETTES.length] }
-function bookH(id)  { const n = hashId(id); return 130 + (n * 17 + 13) % 65 }
-function bookW(id)  { const n = hashId(id); return 24  + (n * 7  +  5) % 16 }
+function bookStyle(id) {
+  const n = hashId(id)
+  return {
+    pal: SPINE_PALETTES[n % SPINE_PALETTES.length],
+    h:   130 + (n * 17 + 13) % 65,
+    w:   24  + (n * 7  +  5) % 16,
+  }
+}
+function bookPalette(id) { return bookStyle(id).pal }
 
 // ── Reading Now shelf — flat covers face-up ───────────────────────────────────
 function ReadingNowShelf({ books, getProgress, onTap }) {
@@ -63,9 +69,7 @@ function ReadingNowShelf({ books, getProgress, onTap }) {
 
 // ── Individual spine book ─────────────────────────────────────────────────────
 function SpineBook({ book, progress, onTap, onLongPress, isActive }) {
-  const pal = bookPalette(book.id)
-  const h   = bookH(book.id)
-  const w   = bookW(book.id)
+  const { pal, h, w } = bookStyle(book.id)
   const pct = Math.round(progress || 0)
   const bg  = pct > 0
     ? `linear-gradient(to top, ${pal.read} 0%, ${pal.read} ${pct}%, ${pal.base} ${pct}%, ${pal.base} 100%)`
@@ -241,8 +245,11 @@ export default function Library({ myLibrary, readingNow, getProgress, onBack, on
   }, [activeBook, shelveBook, handlePutBack])
 
   const ROW_SIZE = 9
-  const spineRows = []
-  for (let i = 0; i < myLibrary.length; i += ROW_SIZE) spineRows.push(myLibrary.slice(i, i + ROW_SIZE))
+  const spineRows = useMemo(() => {
+    const rows = []
+    for (let i = 0; i < myLibrary.length; i += ROW_SIZE) rows.push(myLibrary.slice(i, i + ROW_SIZE))
+    return rows
+  }, [myLibrary])
 
   return (
     <div className={`library-view${nightMode ? ' night' : ''}`}>
