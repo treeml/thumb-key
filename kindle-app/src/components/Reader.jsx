@@ -271,85 +271,68 @@ export default function Reader({ book, nightMode, setProgress, initialProgress, 
 
     canvas.style.display = 'block'
 
-    // Bow: paper edge lifts slightly at mid-height, peaks at 50% through the turn
-    const bowAmp = Math.min(w * 0.035, 14) * Math.sin(progress * Math.PI)
-    // Shadow alpha ramps up quickly then stays steady
+    // Bow amplitude peaks at 50% progress — paper sags/bows as it lifts off the pile
+    const bowAmp = Math.min(w * 0.06, 22) * Math.sin(progress * Math.PI)
+    // Opacity envelope — quick ramp then holds through the turn
     const sinP = Math.sin(progress * Math.PI / 2)
 
+    const drawEdge = (ex, bd) => {
+      // bd = bow direction: +1 bows right (fwd), -1 bows left (bck)
+
+      // ── Curl shadow on the DEPARTING page, near the trailing edge ────────────
+      // This is what makes the edge look like it's lifting off the surface.
+      // The shadow is darkest right at the edge and fades inward.
+      const curlW = Math.min(50, dir === 'fwd' ? ex : w - ex)
+      if (curlW > 1) {
+        const cx = ex - bd * curlW   // inward direction from edge
+        ctx.save()
+        ctx.beginPath()
+        ctx.moveTo(ex, 0)
+        ctx.quadraticCurveTo(ex + bd * bowAmp, h / 2, ex, h)
+        ctx.lineTo(cx, h); ctx.lineTo(cx, 0)
+        ctx.closePath(); ctx.clip()
+        const cg = ctx.createLinearGradient(ex, 0, cx, 0)
+        cg.addColorStop(0,   `rgba(0,0,0,${(sinP * 0.30).toFixed(3)})`)
+        cg.addColorStop(0.6, `rgba(0,0,0,${(sinP * 0.05).toFixed(3)})`)
+        cg.addColorStop(1,   'rgba(0,0,0,0)')
+        ctx.fillStyle = cg; ctx.fillRect(0, 0, w, h)
+        ctx.restore()
+      }
+
+      // ── Bright specular line — paper edge catching light as it lifts ─────────
+      ctx.save()
+      ctx.beginPath()
+      ctx.moveTo(ex, 0)
+      ctx.quadraticCurveTo(ex + bd * bowAmp, h / 2, ex, h)
+      ctx.lineWidth = 2
+      ctx.strokeStyle = `rgba(255,255,255,${(sinP * 0.80).toFixed(3)})`
+      ctx.stroke()
+      ctx.restore()
+
+      // ── Drop shadow cast onto the REVEALED page ───────────────────────────────
+      const outward = ex + bd * Math.min(62, dir === 'fwd' ? w - ex : ex)
+      ctx.save()
+      ctx.beginPath()
+      ctx.moveTo(ex, 0)
+      ctx.quadraticCurveTo(ex + bd * bowAmp, h / 2, ex, h)
+      ctx.lineTo(outward, h); ctx.lineTo(outward, 0)
+      ctx.closePath(); ctx.clip()
+      const sg = ctx.createLinearGradient(ex, 0, outward, 0)
+      sg.addColorStop(0,   `rgba(0,0,0,${(sinP * 0.48).toFixed(3)})`)
+      sg.addColorStop(0.4, `rgba(0,0,0,${(sinP * 0.12).toFixed(3)})`)
+      sg.addColorStop(1,   'rgba(0,0,0,0)')
+      ctx.fillStyle = sg; ctx.fillRect(0, 0, w, h)
+      ctx.restore()
+    }
+
     if (dir === 'fwd') {
-      // Entire front page slides leftward — the sheet slides off the pile
       front.style.transform = `translateX(${(-progress * w).toFixed(1)}px)`
-
-      // Trailing edge = right side of the sliding layer
       const edgeX = w * (1 - progress)
-
-      if (sinP > 0.02 && edgeX < w) {
-        // Shadow falls on back layer, just right of the trailing edge
-        const shadowW = Math.min(52, w - edgeX)
-        if (shadowW > 1) {
-          ctx.save()
-          ctx.beginPath()
-          ctx.moveTo(edgeX, 0)
-          ctx.quadraticCurveTo(edgeX + bowAmp, h / 2, edgeX, h)
-          ctx.lineTo(edgeX + shadowW, h)
-          ctx.lineTo(edgeX + shadowW, 0)
-          ctx.closePath()
-          ctx.clip()
-          const sg = ctx.createLinearGradient(edgeX, 0, edgeX + shadowW, 0)
-          sg.addColorStop(0,   `rgba(0,0,0,${(sinP * 0.38).toFixed(3)})`)
-          sg.addColorStop(0.5, `rgba(0,0,0,${(sinP * 0.10).toFixed(3)})`)
-          sg.addColorStop(1,   'rgba(0,0,0,0)')
-          ctx.fillStyle = sg
-          ctx.fillRect(0, 0, w, h)
-          ctx.restore()
-        }
-        // Bright edge highlight — paper edge catching light as it lifts
-        ctx.save()
-        ctx.beginPath()
-        ctx.moveTo(edgeX, 0)
-        ctx.quadraticCurveTo(edgeX + bowAmp, h / 2, edgeX, h)
-        ctx.lineWidth = 2.5
-        ctx.strokeStyle = `rgba(255,255,255,${(sinP * 0.55).toFixed(3)})`
-        ctx.stroke()
-        ctx.restore()
-      }
-
+      if (sinP > 0.02 && edgeX < w) drawEdge(edgeX, 1)
     } else {
-      // Entire front page slides rightward — sheet returns to pile from left
       front.style.transform = `translateX(${(progress * w).toFixed(1)}px)`
-
-      // Trailing edge = left side of the sliding layer
       const edgeX = progress * w
-
-      if (sinP > 0.02 && edgeX > 0) {
-        // Shadow falls on back layer, just left of the trailing edge
-        const shadowW = Math.min(52, edgeX)
-        if (shadowW > 1) {
-          ctx.save()
-          ctx.beginPath()
-          ctx.moveTo(edgeX, 0)
-          ctx.quadraticCurveTo(edgeX - bowAmp, h / 2, edgeX, h)
-          ctx.lineTo(edgeX - shadowW, h)
-          ctx.lineTo(edgeX - shadowW, 0)
-          ctx.closePath()
-          ctx.clip()
-          const sg = ctx.createLinearGradient(edgeX, 0, edgeX - shadowW, 0)
-          sg.addColorStop(0,   `rgba(0,0,0,${(sinP * 0.38).toFixed(3)})`)
-          sg.addColorStop(0.5, `rgba(0,0,0,${(sinP * 0.10).toFixed(3)})`)
-          sg.addColorStop(1,   'rgba(0,0,0,0)')
-          ctx.fillStyle = sg
-          ctx.fillRect(0, 0, w, h)
-          ctx.restore()
-        }
-        ctx.save()
-        ctx.beginPath()
-        ctx.moveTo(edgeX, 0)
-        ctx.quadraticCurveTo(edgeX - bowAmp, h / 2, edgeX, h)
-        ctx.lineWidth = 2.5
-        ctx.strokeStyle = `rgba(255,255,255,${(sinP * 0.55).toFixed(3)})`
-        ctx.stroke()
-        ctx.restore()
-      }
+      if (sinP > 0.02 && edgeX > 0) drawEdge(edgeX, -1)
     }
   }, [])
 
