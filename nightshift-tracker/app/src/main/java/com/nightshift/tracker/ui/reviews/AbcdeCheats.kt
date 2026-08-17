@@ -1,8 +1,16 @@
 package com.nightshift.tracker.ui.reviews
 
 import androidx.compose.ui.graphics.Color
+import com.nightshift.tracker.BuildConfig
 
 // Written for a stressed intern at 4 am, not for an exam.
+// Letter colours have light-background variants for the UroDay flavor.
+private val URO = BuildConfig.URO
+private val ColA = if (URO) Color(0xFFD92D20) else Color(0xFFFF6B6B)
+private val ColB = if (URO) Color(0xFFC2410C) else Color(0xFFFFA94D)
+private val ColC = if (URO) Color(0xFFB45309) else Color(0xFFFFD166)
+private val ColD = if (URO) Color(0xFF0E7490) else Color(0xFF7EB6FF)
+private val ColE = if (URO) Color(0xFF15803D) else Color(0xFF6BCB77)
 data class AbcdeCheat(
     val letter: String,
     val title: String,
@@ -13,7 +21,7 @@ data class AbcdeCheat(
 val abcdeCheats =
     listOf(
         AbcdeCheat(
-            "A", "Airway", Color(0xFFFF6B6B),
+            "A", "Airway", ColA,
             listOf(
                 "Talking in full sentences = airway patent. Document that and move on.",
                 "Stridor, gurgling, see-saw breathing = badness. Call for help NOW, don't finesse it.",
@@ -22,7 +30,7 @@ val abcdeCheats =
             ),
         ),
         AbcdeCheat(
-            "B", "Breathing", Color(0xFFFFA94D),
+            "B", "Breathing", ColB,
             listOf(
                 "RR is the single best sick-patient number and the one nurses chart least reliably — count it yourself for 30 seconds.",
                 "Sats target 92–96%, or 88–92% if CO2 retainer (check old ABGs / COPD history).",
@@ -32,7 +40,7 @@ val abcdeCheats =
             ),
         ),
         AbcdeCheat(
-            "C", "Circulation", Color(0xFFFFD166),
+            "C", "Circulation", ColC,
             listOf(
                 "Trend beats number: SBP 105 is fine unless they've been 150 all week.",
                 "Recheck weird BPs yourself with a manual cuff — half of overnight 'hypotension' is a cuff problem.",
@@ -43,7 +51,7 @@ val abcdeCheats =
             ),
         ),
         AbcdeCheat(
-            "D", "Disability", Color(0xFF7EB6FF),
+            "D", "Disability", ColD,
             listOf(
                 "BSL: ALWAYS CHECK. Hypo kills and is fixable in 90 seconds.",
                 "GCS drop: compute it properly, chart it, and compare to baseline — 'drowsy' isn't a number.",
@@ -53,7 +61,7 @@ val abcdeCheats =
             ),
         ),
         AbcdeCheat(
-            "E", "Exposure", Color(0xFF6BCB77),
+            "E", "Exposure", ColE,
             listOf(
                 "Temp — actually look at it, including the trend. Hypothermia is a sepsis sign too.",
                 "Look at the whole patient: rashes (petechiae?), calves (DVT?), wounds, drains, catheter bag colour.",

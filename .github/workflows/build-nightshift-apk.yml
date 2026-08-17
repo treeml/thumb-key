@@ -24,26 +24,35 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build release APK
+      - name: Build release APKs (both flavors)
         working-directory: nightshift-tracker
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleNightshiftRelease assembleUrodayRelease --no-daemon
 
-      - name: Rename APK
-        run: cp nightshift-tracker/app/build/outputs/apk/release/app-release.apk nightshift-tracker.apk
+      - name: Rename APKs
+        run: |
+          cp nightshift-tracker/app/build/outputs/apk/nightshift/release/app-nightshift-release.apk nightshift-tracker.apk
+          cp nightshift-tracker/app/build/outputs/apk/uroday/release/app-uroday-release.apk uroday-tracker.apk
 
-      - name: Upload build artifact
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nightshift-tracker-apk
-          path: nightshift-tracker.apk
+          name: shift-tracker-apks
+          path: |
+            nightshift-tracker.apk
+            uroday-tracker.apk
 
-      - name: Attach APK to release
+      - name: Attach APKs to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightshift-apk
-          name: Nightshift Tracker APK
+          name: Nightshift & UroDay Tracker APKs
           body: |
-            Latest Nightshift Tracker build. Download `nightshift-tracker.apk`
-            on your phone and open it to install (see nightshift-tracker/README.md
-            for sideload steps).
-          files: nightshift-tracker.apk
+            Latest builds. Two separate apps that install side by side:
+            - `nightshift-tracker.apk` — Nightshift (dark theme, overnight shifts)
+            - `uroday-tracker.apk` — UroDay (light theme, urology day shifts:
+              ward rounds tab + urology tutorials/guides)
+            Download on your phone and open to install (see
+            nightshift-tracker/README.md for sideload steps).
+          files: |
+            nightshift-tracker.apk
+            uroday-tracker.apk

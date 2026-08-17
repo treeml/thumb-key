@@ -60,6 +60,24 @@ interface JobDao {
 }
 
 @Dao
+interface WardRoundDao {
+    @Query("SELECT * FROM ward_rounds WHERE shiftId = :shiftId ORDER BY priority, createdAt")
+    fun forShift(shiftId: String): Flow<List<WardRound>>
+
+    @Query("SELECT * FROM ward_rounds WHERE shiftId = :shiftId ORDER BY priority, createdAt")
+    suspend fun forShiftOnce(shiftId: String): List<WardRound>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(round: WardRound)
+
+    @Query("DELETE FROM ward_rounds WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("SELECT * FROM ward_rounds")
+    suspend fun allOnce(): List<WardRound>
+}
+
+@Dao
 interface ReviewDao {
     @Query(
         "SELECT * FROM reviews WHERE shiftId = :shiftId ORDER BY priority, createdAt",

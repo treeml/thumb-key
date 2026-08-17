@@ -25,16 +25,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.nightshift.tracker.BuildConfig
 import com.nightshift.tracker.ui.MainViewModel
 import com.nightshift.tracker.ui.Screen
 import com.nightshift.tracker.ui.guides.GuidesTab
+import com.nightshift.tracker.ui.guides.UroLearnTab
 import com.nightshift.tracker.ui.jobs.JobsTab
 import com.nightshift.tracker.ui.jobs.collectAsStateValue
 import com.nightshift.tracker.ui.reviews.ReviewsTab
+import com.nightshift.tracker.ui.rounds.RoundsTab
 import com.nightshift.tracker.ui.theme.Ink
 import com.nightshift.tracker.ui.theme.Surface2
 
-private val tabTitles = listOf("Jobs", "Reviews", "Guides")
+private val tabTitles =
+    if (BuildConfig.URO) {
+        listOf("Jobs", "Rounds", "Reviews", "Learn")
+    } else {
+        listOf("Jobs", "Reviews", "Guides")
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,9 +82,11 @@ fun ShiftScreen(vm: MainViewModel) {
                     )
                 }
             }
-            when (tab) {
-                0 -> JobsTab(vm, generation)
-                1 -> ReviewsTab(vm, generation)
+            when (tabTitles[tab]) {
+                "Jobs" -> JobsTab(vm, generation)
+                "Rounds" -> RoundsTab(vm, generation)
+                "Reviews" -> ReviewsTab(vm, generation)
+                "Learn" -> UroLearnTab()
                 else -> GuidesTab()
             }
         }

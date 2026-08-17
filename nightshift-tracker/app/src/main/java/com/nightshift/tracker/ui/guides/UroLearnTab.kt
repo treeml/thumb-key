@@ -27,9 +27,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nightshift.tracker.ui.theme.Accent
 import com.nightshift.tracker.ui.theme.CardBody
 import com.nightshift.tracker.ui.theme.DangerBody
 import com.nightshift.tracker.ui.theme.DangerRed
@@ -37,8 +37,13 @@ import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.Surface1
 import com.nightshift.tracker.ui.theme.TextSecondary
 
+/**
+ * UroDay's Learn tab: procedural tutorials first (the how-to knowledge a
+ * urology JMO actually uses), then condition guides in the same format as
+ * the Nightshift guides, each with a red never-miss section.
+ */
 @Composable
-fun GuidesTab() {
+fun UroLearnTab() {
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -46,7 +51,7 @@ fun GuidesTab() {
     ) {
         item {
             Text(
-                GUIDES_DISCLAIMER,
+                URO_DISCLAIMER,
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
                 modifier =
@@ -57,15 +62,34 @@ fun GuidesTab() {
                         .padding(12.dp),
             )
         }
-        items(guides, key = { it.title }) { guide ->
+        item {
+            Text(
+                "TUTORIALS — WARD SKILLS",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        items(uroTutorials, key = { "tut-${it.title}" }) { tutorial ->
+            TutorialCard(tutorial)
+        }
+        item {
+            Text(
+                "CONDITION GUIDES",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        }
+        items(uroGuides, key = { "guide-${it.title}" }) { guide ->
             GuideCard(guide)
         }
     }
 }
 
 @Composable
-fun GuideCard(guide: Guide) {
-    var expanded by rememberSaveable(guide.title) { mutableStateOf(false) }
+private fun TutorialCard(tutorial: Tutorial) {
+    var expanded by rememberSaveable(tutorial.title) { mutableStateOf(false) }
     Column(
         Modifier
             .fillMaxWidth()
@@ -82,9 +106,9 @@ fun GuideCard(guide: Guide) {
                     .padding(14.dp),
         ) {
             Column(Modifier.weight(1f)) {
-                Text(guide.title, style = MaterialTheme.typography.titleMedium)
+                Text(tutorial.title, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    guide.oneLiner,
+                    tutorial.oneLiner,
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                 )
@@ -100,17 +124,18 @@ fun GuideCard(guide: Guide) {
                 Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                guide.sections.forEach { section ->
-                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(
-                            section.heading,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        section.lines.forEach { line -> Bullet(line, CardBody) }
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    tutorial.steps.forEachIndexed { index, step ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                "${index + 1}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Accent,
+                            )
+                            Text(step, style = MaterialTheme.typography.bodyMedium, color = CardBody)
+                        }
                     }
                 }
-                // Red contraindications block — always last, always visible when open.
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -120,24 +145,18 @@ fun GuideCard(guide: Guide) {
                     verticalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     Text(
-                        "⛔ CONTRAINDICATIONS / DO NOT",
+                        "⛔ PITFALLS / NEVER",
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                         color = DangerRed,
                     )
-                    guide.contraindications.forEach { line -> Bullet(line, DangerBody) }
+                    tutorial.pitfalls.forEach { line ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("•", color = DangerBody, style = MaterialTheme.typography.bodyMedium)
+                            Text(line, style = MaterialTheme.typography.bodyMedium, color = DangerBody)
+                        }
+                    }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun Bullet(
-    text: String,
-    color: Color,
-) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("•", color = color, style = MaterialTheme.typography.bodyMedium)
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
     }
 }

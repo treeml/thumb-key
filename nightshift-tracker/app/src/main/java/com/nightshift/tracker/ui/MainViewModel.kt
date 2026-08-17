@@ -11,6 +11,8 @@ import com.nightshift.tracker.NightshiftApp
 import com.nightshift.tracker.data.Job
 import com.nightshift.tracker.data.Review
 import com.nightshift.tracker.data.Shift
+import com.nightshift.tracker.data.ShiftSnapshot
+import com.nightshift.tracker.data.WardRound
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -67,6 +69,12 @@ class MainViewModel(
                 if (shift == null) flowOf(emptyList()) else repo.reviewDao.forShift(shift.id)
             }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    val rounds: StateFlow<List<WardRound>> =
+        activeShift
+            .flatMapLatest { shift ->
+                if (shift == null) flowOf(emptyList()) else repo.wardRoundDao.forShift(shift.id)
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     fun startShift(label: String) =
         viewModelScope.launch {
             repo.startShift(label)
@@ -107,6 +115,20 @@ class MainViewModel(
         viewModelScope.launch {
             repo.deleteReview(review)
             undoSnackbar("Review deleted") { repo.restoreReview(review) }
+        }
+
+    fun addRound() = viewModelScope.launch { activeShift.value?.let { repo.addRound(it.id) } }
+
+    fun updateRound(round: WardRound) = viewModelScope.launch { repo.updateRound(round) }
+
+    fun markRoundSeen(round: WardRound) = viewModelScope.launch { repo.updateRound(round.copy(seen = true)) }
+
+    fun reopenRound(round: WardRound) = viewModelScope.launch { repo.updateRound(round.copy(seen = false)) }
+
+    fun deleteRoundWithUndo(round: WardRound) =
+        viewModelScope.launch {
+            repo.deleteRound(round)
+            undoSnackbar("Round entry deleted") { repo.restoreRound(round) }
         }
 
     fun deleteArchivedShiftWithUndo(shift: Shift) =
@@ -165,11 +187,19 @@ class MainViewModel(
 
     // ---- Archive detail & search ----
 
-    suspend fun archivedShiftDetail(shiftId: String): Triple<Shift?, List<Job>, List<Review>> =
-        Triple(
-            repo.shiftDao.byId(shiftId),
-            repo.jobDao.forShiftOnce(shiftId),
-            repo.reviewDao.forShiftOnce(shiftId),
+    data class ArchiveDetail(
+        val shift: Shift?,
+        val jobs: List<Job>,
+        val reviews: List<Review>,
+        val rounds: List<WardRound>,
+    )
+
+    suspend fun archivedShiftDetail(shiftId: String): ArchiveDetail =
+        ArchiveDetail(
+            shift = repo.shiftDao.byId(shiftId),
+            jobs = repo.jobDao.forShiftOnce(shiftId),
+            reviews = repo.reviewDao.forShiftOnce(shiftId),
+            rounds = repo.wardRoundDao.forShiftOnce(shiftId),
         )
 
     /** Free-text search across every archived shift's jobs and reviews. */
@@ -179,6 +209,7 @@ class MainViewModel(
         val shifts = archivedShifts.value
         val allJobs = repo.jobDao.allOnce().groupBy { it.shiftId }
         val allReviews = repo.reviewDao.allOnce().groupBy { it.shiftId }
+        val allRounds = repo.wardRoundDao.allOnce().groupBy { it.shiftId }
         return shifts.mapNotNull { shift ->
             val hits = mutableListOf<String>()
             if (shift.label.lowercase().contains(q)) hits += shift.label
@@ -194,6 +225,15 @@ class MainViewModel(
                 ).forEach { f ->
                     if (f.lowercase().contains(q)) {
                         hits += "Review ${r.patientName.ifBlank { r.bed }}: ${f.take(80)}"
+                    }
+                }
+            }
+            allRounds[shift.id].orEmpty().forEach { r ->
+                listOf(
+                    r.bed, r.patientName, r.mrn, r.dxOp, r.overnight, r.exam, r.results, r.plan,
+                ).forEach { f ->
+                    if (f.lowercase().contains(q)) {
+                        hits += "Round ${r.patientName.ifBlank { r.bed }}: ${f.take(80)}"
                     }
                 }
             }

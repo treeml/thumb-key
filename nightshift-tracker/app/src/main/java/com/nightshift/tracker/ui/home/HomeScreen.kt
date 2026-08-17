@@ -68,7 +68,10 @@ fun HomeScreen(vm: MainViewModel) {
     ) {
         item {
             Column {
-                Text("Nightshift", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    if (com.nightshift.tracker.BuildConfig.URO) "UroDay" else "Nightshift",
+                    style = MaterialTheme.typography.headlineSmall,
+                )
                 Text(
                     SimpleDateFormat("EEEE d MMMM", Locale.getDefault()).format(Date()),
                     style = MaterialTheme.typography.bodyMedium,
@@ -163,8 +166,10 @@ fun HomeScreen(vm: MainViewModel) {
     }
 }
 
-fun defaultShiftLabel(): String =
-    "Night " + SimpleDateFormat("EEE d MMM", Locale.getDefault()).format(Date())
+fun defaultShiftLabel(): String {
+    val prefix = if (com.nightshift.tracker.BuildConfig.URO) "List " else "Night "
+    return prefix + SimpleDateFormat("EEE d MMM", Locale.getDefault()).format(Date())
+}
 
 @Composable
 private fun BigButton(

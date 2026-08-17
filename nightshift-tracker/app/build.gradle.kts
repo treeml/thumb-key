@@ -13,10 +13,27 @@ android {
         applicationId = "com.nightshift.tracker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
         vectorDrawables { useSupportLibrary = true }
         ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+    }
+
+    // Two apps from one codebase. They install side by side and share nothing
+    // on-device (separate applicationIds, separate databases and backups).
+    flavorDimensions += "app"
+    productFlavors {
+        create("nightshift") {
+            dimension = "app"
+            resValue("string", "app_name", "Nightshift")
+            buildConfigField("boolean", "URO", "false")
+        }
+        create("uroday") {
+            dimension = "app"
+            applicationIdSuffix = ".uro"
+            resValue("string", "app_name", "UroDay")
+            buildConfigField("boolean", "URO", "true")
+        }
     }
 
     signingConfigs {
@@ -47,7 +64,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 dependencies {

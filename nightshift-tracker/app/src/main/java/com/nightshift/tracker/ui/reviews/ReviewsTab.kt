@@ -49,6 +49,7 @@ import com.nightshift.tracker.ui.components.DbTextField
 import com.nightshift.tracker.ui.components.PriorityPicker
 import com.nightshift.tracker.ui.jobs.CompletedDrawerHeader
 import com.nightshift.tracker.ui.jobs.collectAsStateValue
+import com.nightshift.tracker.ui.theme.CardBody
 import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.RoutineGreen
 import com.nightshift.tracker.ui.theme.Surface1
@@ -453,7 +454,7 @@ private fun AbcdeField(
                 cheat.lines.forEach { line ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("•", color = cheat.color, style = MaterialTheme.typography.bodyMedium)
-                        Text(line, style = MaterialTheme.typography.bodyMedium, color = Color(0xFFD5DBE8))
+                        Text(line, style = MaterialTheme.typography.bodyMedium, color = CardBody)
                     }
                 }
             }

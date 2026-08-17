@@ -1,9 +1,17 @@
 # Nightshift Tracker
 
-Native Android app for managing overnight hospital shifts (jobs, clinical
-reviews, quick-reference guides), built for an Australian JMO. Kotlin +
-Jetpack Compose + Room. Everything is stored locally on the device — the
-app requests **no network permission at all**.
+Native Android app for managing hospital shifts, built for an Australian
+JMO. Kotlin + Jetpack Compose + Room. Everything is stored locally on the
+device — the app requests **no network permission at all**.
+
+One codebase, two apps (Gradle product flavors), installable side by side:
+
+- **Nightshift** (`assembleNightshiftRelease`): true dark theme; tabs
+  Jobs / Reviews / Guides for overnight cover shifts.
+- **UroDay** (`assembleUrodayRelease`): light theme; tabs Jobs / Rounds /
+  Reviews / Learn for urology day shifts — ward-round notes per patient
+  with a round-note generator, plus urology ward-skill tutorials and
+  condition guides.
 
 ## Why this exists
 

@@ -55,6 +55,7 @@ class BackupManager(
                 shifts = db.shiftDao().allOnce(),
                 jobs = db.jobDao().allOnce(),
                 reviews = db.reviewDao().allOnce(),
+                rounds = db.wardRoundDao().allOnce(),
             )
         return gson.toJson(payload)
     }
@@ -132,6 +133,9 @@ class BackupManager(
                 @Suppress("USELESS_ELVIS")
                 val reviews: List<Review> = payload.reviews ?: emptyList()
 
+                @Suppress("USELESS_ELVIS")
+                val rounds: List<WardRound> = payload.rounds ?: emptyList()
+
                 // Safety net before we touch anything.
                 for (dir in backupDirs()) {
                     atomicWrite(
@@ -142,6 +146,7 @@ class BackupManager(
 
                 db.runInTransaction {
                     // runInTransaction is not suspend-friendly; use raw deletes.
+                    db.openHelper.writableDatabase.execSQL("DELETE FROM ward_rounds")
                     db.openHelper.writableDatabase.execSQL("DELETE FROM reviews")
                     db.openHelper.writableDatabase.execSQL("DELETE FROM jobs")
                     db.openHelper.writableDatabase.execSQL("DELETE FROM shifts")
@@ -149,8 +154,9 @@ class BackupManager(
                 shifts.forEach { db.shiftDao().upsert(it) }
                 jobs.forEach { db.jobDao().upsert(it) }
                 reviews.forEach { db.reviewDao().upsert(it) }
+                rounds.forEach { db.wardRoundDao().upsert(it) }
                 scheduleBackup()
-                "Restored ${shifts.size} shifts, ${jobs.size} jobs, ${reviews.size} reviews"
+                "Restored ${shifts.size} shifts, ${jobs.size} jobs, ${reviews.size} reviews, ${rounds.size} rounds"
             }
         }
 }

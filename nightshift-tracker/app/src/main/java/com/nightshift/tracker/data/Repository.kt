@@ -20,6 +20,7 @@ class Repository(
     val shiftDao get() = db.shiftDao()
     val jobDao get() = db.jobDao()
     val reviewDao get() = db.reviewDao()
+    val wardRoundDao get() = db.wardRoundDao()
 
     private suspend fun <T> commit(block: suspend () -> T): T {
         val result = block()
@@ -51,21 +52,28 @@ class Repository(
             shiftDao.upsert(shift.copy(archived = true, archivedAt = System.currentTimeMillis()))
         }
 
-    suspend fun deleteShiftCascade(shift: Shift): Triple<Shift, List<Job>, List<Review>> =
+    suspend fun deleteShiftCascade(shift: Shift): ShiftSnapshot =
         commit {
-            val jobs = jobDao.forShiftOnce(shift.id)
-            val reviews = reviewDao.forShiftOnce(shift.id)
-            jobs.forEach { jobDao.delete(it.id) }
-            reviews.forEach { reviewDao.delete(it.id) }
+            val snapshot =
+                ShiftSnapshot(
+                    shift = shift,
+                    jobs = jobDao.forShiftOnce(shift.id),
+                    reviews = reviewDao.forShiftOnce(shift.id),
+                    rounds = wardRoundDao.forShiftOnce(shift.id),
+                )
+            snapshot.jobs.forEach { jobDao.delete(it.id) }
+            snapshot.reviews.forEach { reviewDao.delete(it.id) }
+            snapshot.rounds.forEach { wardRoundDao.delete(it.id) }
             shiftDao.delete(shift.id)
-            Triple(shift, jobs, reviews)
+            snapshot
         }
 
-    suspend fun restoreShiftCascade(data: Triple<Shift, List<Job>, List<Review>>) =
+    suspend fun restoreShiftCascade(data: ShiftSnapshot) =
         commit {
-            shiftDao.upsert(data.first)
-            data.second.forEach { jobDao.upsert(it) }
-            data.third.forEach { reviewDao.upsert(it) }
+            shiftDao.upsert(data.shift)
+            data.jobs.forEach { jobDao.upsert(it) }
+            data.reviews.forEach { reviewDao.upsert(it) }
+            data.rounds.forEach { wardRoundDao.upsert(it) }
         }
 
     suspend fun addJob(shiftId: String): Job =
@@ -123,4 +131,18 @@ class Repository(
     suspend fun deleteReview(review: Review) = commit { reviewDao.delete(review.id) }
 
     suspend fun restoreReview(review: Review) = commit { reviewDao.upsert(review) }
+
+    suspend fun addRound(shiftId: String): WardRound =
+        commit {
+            val round =
+                WardRound(id = UUID.randomUUID().toString(), shiftId = shiftId, createdAt = System.currentTimeMillis())
+            wardRoundDao.upsert(round)
+            round
+        }
+
+    suspend fun updateRound(round: WardRound) = commit { wardRoundDao.upsert(round) }
+
+    suspend fun deleteRound(round: WardRound) = commit { wardRoundDao.delete(round.id) }
+
+    suspend fun restoreRound(round: WardRound) = commit { wardRoundDao.upsert(round) }
 }

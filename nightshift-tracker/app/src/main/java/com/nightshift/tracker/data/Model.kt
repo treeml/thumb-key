@@ -61,12 +61,47 @@ data class Review(
     val createdAt: Long,
 )
 
+/**
+ * Ward round entry (UroDay flavor's Rounds tab; table exists in both flavors
+ * so backups stay interchangeable).
+ */
+@Entity(
+    tableName = "ward_rounds",
+    indices = [Index("shiftId")],
+)
+data class WardRound(
+    @PrimaryKey val id: String,
+    val shiftId: String,
+    val bed: String = "",
+    val patientName: String = "",
+    val mrn: String = "",
+    // Diagnosis / operation and post-op day, e.g. "TURP (POD 1)".
+    val dxOp: String = "",
+    val overnight: String = "",
+    val exam: String = "",
+    val results: String = "",
+    val plan: String = "",
+    val priority: Int = 3,
+    // Seen on today's round = parked in the Seen drawer.
+    val seen: Boolean = false,
+    val createdAt: Long,
+)
+
 /** Whole-database snapshot used for JSON auto-backup, export and import. */
 data class BackupPayload(
     val app: String = "nightshift-tracker",
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = 2,
     val exportedAt: Long,
     val shifts: List<Shift>,
     val jobs: List<Job>,
     val reviews: List<Review>,
+    val rounds: List<WardRound> = emptyList(),
+)
+
+/** Full contents of one shift, used for cascade delete/undo and archive view. */
+data class ShiftSnapshot(
+    val shift: Shift,
+    val jobs: List<Job>,
+    val reviews: List<Review>,
+    val rounds: List<WardRound>,
 )

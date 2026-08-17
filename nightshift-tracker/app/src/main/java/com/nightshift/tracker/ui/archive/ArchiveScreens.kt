@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.nightshift.tracker.data.Job
 import com.nightshift.tracker.data.Review
 import com.nightshift.tracker.data.Shift
+import com.nightshift.tracker.data.WardRound
 import com.nightshift.tracker.ui.ArchiveSearchHit
 import com.nightshift.tracker.ui.MainViewModel
 import com.nightshift.tracker.ui.Screen
@@ -75,11 +76,13 @@ fun ArchiveDetailScreen(
     var shift by remember { mutableStateOf<Shift?>(null) }
     var jobs by remember { mutableStateOf(emptyList<Job>()) }
     var reviews by remember { mutableStateOf(emptyList<Review>()) }
+    var rounds by remember { mutableStateOf(emptyList<WardRound>()) }
     LaunchedEffect(shiftId) {
         val detail = vm.archivedShiftDetail(shiftId)
-        shift = detail.first
-        jobs = detail.second
-        reviews = detail.third
+        shift = detail.shift
+        jobs = detail.jobs
+        reviews = detail.reviews
+        rounds = detail.rounds
     }
     val fmt = SimpleDateFormat("EEE d MMM yyyy, HH:mm", Locale.getDefault())
 
@@ -125,6 +128,11 @@ fun ArchiveDetailScreen(
             item { SectionLabel("Jobs (${jobs.size})") }
             if (jobs.isEmpty()) item { EmptyLine("No jobs recorded.") }
             items(jobs.size) { i -> ArchivedJobCard(jobs[i]) }
+
+            if (rounds.isNotEmpty()) {
+                item { SectionLabel("Ward round (${rounds.size})") }
+                items(rounds.size) { i -> ArchivedRoundCard(rounds[i]) }
+            }
 
             item { SectionLabel("Reviews (${reviews.size})") }
             if (reviews.isEmpty()) item { EmptyLine("No reviews recorded.") }
@@ -175,6 +183,39 @@ private fun ArchivedJobCard(job: Job) {
             style = MaterialTheme.typography.labelSmall,
             color = if (job.status == 2) RoutineGreen else TextSecondary,
         )
+    }
+}
+
+@Composable
+private fun ArchivedRoundCard(round: WardRound) {
+    val accent = priorityColor(round.priority)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(Surface1, RoundedCornerShape(14.dp))
+            .border(1.dp, Outline, RoundedCornerShape(14.dp))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(12.dp).background(accent, CircleShape))
+            Text(
+                "Bed ${round.bed.ifBlank { "—" }} · ${round.patientName.ifBlank { "Unnamed" }}" +
+                    (if (round.mrn.isNotBlank()) " · MRN ${round.mrn}" else ""),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                if (round.seen) "SEEN" else "NOT SEEN",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (round.seen) RoutineGreen else TextSecondary,
+            )
+        }
+        if (round.dxOp.isNotBlank()) Field("Dx / Op", round.dxOp)
+        if (round.overnight.isNotBlank()) Field("Overnight", round.overnight)
+        if (round.exam.isNotBlank()) Field("O/E", round.exam)
+        if (round.results.isNotBlank()) Field("Results", round.results)
+        if (round.plan.isNotBlank()) Field("Plan", round.plan)
     }
 }
 
