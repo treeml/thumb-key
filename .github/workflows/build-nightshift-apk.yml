@@ -1,0 +1,49 @@
+name: Build Nightshift APK
+
+on:
+  push:
+    branches:
+      - claude/nightshift-tracker-android-u4zozo
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release APK
+        working-directory: nightshift-tracker
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Rename APK
+        run: cp nightshift-tracker/app/build/outputs/apk/release/app-release.apk nightshift-tracker.apk
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightshift-tracker-apk
+          path: nightshift-tracker.apk
+
+      - name: Attach APK to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightshift-apk
+          name: Nightshift Tracker APK
+          body: |
+            Latest Nightshift Tracker build. Download `nightshift-tracker.apk`
+            on your phone and open it to install (see nightshift-tracker/README.md
+            for sideload steps).
+          files: nightshift-tracker.apk

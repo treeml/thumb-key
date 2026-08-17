@@ -19,11 +19,27 @@ android {
         ksp { arg("room.schemaLocation", "$projectDir/schemas") }
     }
 
+    signingConfigs {
+        create("shared") {
+            // Committed keystore for a personal, sideloaded, never-on-a-store
+            // app: every CI rebuild carries the same signature, so new builds
+            // install straight over the old one without uninstalling.
+            storeFile = rootProject.file("signing/nightshift.keystore")
+            storePassword = "nightshift"
+            keyAlias = "nightshift"
+            keyPassword = "nightshift"
+        }
+    }
+
     buildTypes {
         release {
             // Minification off: nothing to shrink that matters, and it keeps
             // Gson reflection on the backup models guaranteed-safe.
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("shared")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("shared")
         }
     }
     compileOptions {
