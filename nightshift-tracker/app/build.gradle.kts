@@ -16,23 +16,26 @@ android {
         versionCode = 3
         versionName = "1.2.0"
         vectorDrawables { useSupportLibrary = true }
-        ksp { arg("room.schemaLocation", "$projectDir/schemas") }
     }
 
     // Two apps from one codebase. They install side by side and share nothing
     // on-device (separate applicationIds, separate databases and backups).
     flavorDimensions += "app"
     productFlavors {
+        // Per-flavor Room schema dirs: both flavors' KSP tasks run in one CI
+        // invocation, and a shared schema file is a write/read race.
         create("nightshift") {
             dimension = "app"
             resValue("string", "app_name", "Nightshift")
             buildConfigField("boolean", "URO", "false")
+            ksp { arg("room.schemaLocation", "$projectDir/schemas/nightshift") }
         }
         create("uroday") {
             dimension = "app"
             applicationIdSuffix = ".uro"
             resValue("string", "app_name", "UroDay")
             buildConfigField("boolean", "URO", "true")
+            ksp { arg("room.schemaLocation", "$projectDir/schemas/uroday") }
         }
     }
 
