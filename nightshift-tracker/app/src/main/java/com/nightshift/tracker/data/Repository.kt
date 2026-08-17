@@ -77,6 +77,13 @@ class Repository(
 
     suspend fun updateJob(job: Job) = commit { jobDao.update(job) }
 
+    /** Done: hide from the active list; kill any running timer with it. */
+    suspend fun completeJob(job: Job) =
+        commit {
+            if (job.timerEndAt != null) TimerAlarms.cancel(context, job.id)
+            jobDao.update(job.copy(status = 2, timerEndAt = null))
+        }
+
     suspend fun deleteJob(job: Job) =
         commit {
             if (job.timerEndAt != null) TimerAlarms.cancel(context, job.id)

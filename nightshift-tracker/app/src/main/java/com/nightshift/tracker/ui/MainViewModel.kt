@@ -83,6 +83,14 @@ class MainViewModel(
 
     fun updateJob(job: Job) = viewModelScope.launch { repo.updateJob(job) }
 
+    fun completeJob(job: Job) = viewModelScope.launch { repo.completeJob(job) }
+
+    fun reopenJob(job: Job) = viewModelScope.launch { repo.updateJob(job.copy(status = 1)) }
+
+    fun completeReview(review: Review) = viewModelScope.launch { repo.updateReview(review.copy(done = true)) }
+
+    fun reopenReview(review: Review) = viewModelScope.launch { repo.updateReview(review.copy(done = false)) }
+
     fun setJobTimer(job: Job, endAt: Long?) = viewModelScope.launch { repo.setJobTimer(job, endAt) }
 
     fun deleteJobWithUndo(job: Job) =

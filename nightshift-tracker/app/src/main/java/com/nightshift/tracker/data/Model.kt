@@ -56,6 +56,8 @@ data class Review(
     val impression: String = "",
     val plan: String = "",
     val registrarNotified: Boolean = false,
+    // Done = hidden from the active list, parked in the Completed drawer.
+    val done: Boolean = false,
     val createdAt: Long,
 )
 

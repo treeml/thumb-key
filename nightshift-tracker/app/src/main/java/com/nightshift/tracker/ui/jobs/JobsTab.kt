@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +64,10 @@ fun JobsTab(
     generation: Int,
 ) {
     val jobs = vm.jobs.collectAsStateValue()
+    val active = jobs.filter { it.status != 2 }
+    val completed = jobs.filter { it.status == 2 }
+    var showCompleted by rememberSaveable { mutableStateOf(false) }
+
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
@@ -79,8 +84,22 @@ fun JobsTab(
                     )
                 }
             }
-            items(jobs, key = { it.id }) { job ->
+            items(active, key = { it.id }) { job ->
                 JobCard(job = job, vm = vm, generation = generation)
+            }
+            if (completed.isNotEmpty()) {
+                item(key = "completed-drawer") {
+                    CompletedDrawerHeader(
+                        title = "Completed (${completed.size})",
+                        expanded = showCompleted,
+                        onToggle = { showCompleted = !showCompleted },
+                    )
+                }
+                if (showCompleted) {
+                    items(completed, key = { "done-${it.id}" }) { job ->
+                        CompletedJobRow(job = job, vm = vm)
+                    }
+                }
             }
         }
         ExtendedFloatingActionButton(
@@ -131,8 +150,9 @@ private fun JobCard(
                 singleLine = true,
                 modifier = Modifier.width(96.dp),
             )
+            // Two-state toggle; "done" has its own button and its own drawer.
             StatusToggle(status = job.status) {
-                vm.updateJob(job.copy(status = (job.status + 1) % 3))
+                vm.updateJob(job.copy(status = (job.status + 1) % 2))
             }
         }
         DbTextField(
@@ -167,6 +187,18 @@ private fun JobCard(
             }
             Spacer(Modifier.weight(1f))
             ArmedDeleteButton(onConfirmedDelete = { vm.deleteJobWithUndo(job) })
+            // Done: card slides into the Completed drawer, retrievable there.
+            Box(
+                Modifier
+                    .defaultMinSize(minHeight = 48.dp)
+                    .background(RoutineGreen.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
+                    .border(1.dp, RoutineGreen.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                    .clickable { vm.completeJob(job) }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("Done ✓", style = MaterialTheme.typography.labelLarge, color = RoutineGreen)
+            }
         }
     }
 
@@ -196,6 +228,75 @@ private fun JobCard(
                 showTimerPicker = false
             },
         )
+    }
+}
+
+@Composable
+fun CompletedDrawerHeader(
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 48.dp)
+                .background(Surface2, RoundedCornerShape(12.dp))
+                .clickable(onClick = onToggle)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelLarge,
+            color = TextSecondary,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            if (expanded) "Hide" else "Show",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+@Composable
+private fun CompletedJobRow(
+    job: Job,
+    vm: MainViewModel,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(Surface1, RoundedCornerShape(12.dp))
+                .border(1.dp, Outline, RoundedCornerShape(12.dp))
+                .padding(12.dp),
+    ) {
+        Text("✓", style = MaterialTheme.typography.titleMedium, color = RoutineGreen)
+        Text(
+            (if (job.bed.isNotBlank()) "Bed ${job.bed} — " else "") +
+                job.text.ifBlank { "(handwritten note)" },
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary,
+            maxLines = 2,
+            modifier = Modifier.weight(1f),
+        )
+        Box(
+            Modifier
+                .defaultMinSize(minHeight = 44.dp)
+                .background(Surface2, RoundedCornerShape(10.dp))
+                .clickable { vm.reopenJob(job) }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Restore", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        ArmedDeleteButton(onConfirmedDelete = { vm.deleteJobWithUndo(job) }, idleLabel = "Del")
     }
 }
 

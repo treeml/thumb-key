@@ -47,6 +47,7 @@ import com.nightshift.tracker.ui.MainViewModel
 import com.nightshift.tracker.ui.components.ArmedDeleteButton
 import com.nightshift.tracker.ui.components.DbTextField
 import com.nightshift.tracker.ui.components.PriorityPicker
+import com.nightshift.tracker.ui.jobs.CompletedDrawerHeader
 import com.nightshift.tracker.ui.jobs.collectAsStateValue
 import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.RoutineGreen
@@ -108,6 +109,10 @@ fun ReviewsTab(
     generation: Int,
 ) {
     val reviews = vm.reviews.collectAsStateValue()
+    val active = reviews.filter { !it.done }
+    val completed = reviews.filter { it.done }
+    var showCompleted by rememberSaveable { mutableStateOf(false) }
+
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
@@ -124,8 +129,22 @@ fun ReviewsTab(
                     )
                 }
             }
-            items(reviews, key = { it.id }) { review ->
+            items(active, key = { it.id }) { review ->
                 ReviewCard(review = review, vm = vm, generation = generation)
+            }
+            if (completed.isNotEmpty()) {
+                item(key = "completed-drawer") {
+                    CompletedDrawerHeader(
+                        title = "Completed (${completed.size})",
+                        expanded = showCompleted,
+                        onToggle = { showCompleted = !showCompleted },
+                    )
+                }
+                if (showCompleted) {
+                    items(completed, key = { "done-${it.id}" }) { review ->
+                        CompletedReviewRow(review = review, vm = vm)
+                    }
+                }
             }
         }
         ExtendedFloatingActionButton(
@@ -279,6 +298,18 @@ private fun ReviewCard(
                     }
                     Spacer(Modifier.weight(1f))
                     ArmedDeleteButton(onConfirmedDelete = { vm.deleteReviewWithUndo(review) })
+                    // Done: card moves to the Completed drawer, retrievable there.
+                    Box(
+                        Modifier
+                            .defaultMinSize(minHeight = 48.dp)
+                            .background(RoutineGreen.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
+                            .border(1.dp, RoutineGreen.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                            .clickable { vm.completeReview(review) }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("Done ✓", style = MaterialTheme.typography.labelLarge, color = RoutineGreen)
+                    }
                 }
 
                 // DHR note generator — appears once there's something to write.
@@ -312,6 +343,52 @@ private fun ReviewCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CompletedReviewRow(
+    review: Review,
+    vm: MainViewModel,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(Surface1, RoundedCornerShape(12.dp))
+                .border(1.dp, Outline, RoundedCornerShape(12.dp))
+                .padding(12.dp),
+    ) {
+        Box(Modifier.size(12.dp).background(priorityColor(review.priority), CircleShape))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Bed ${review.bed.ifBlank { "—" }} · ${review.patientName.ifBlank { "Unnamed" }}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+                maxLines = 1,
+            )
+            if (review.reason.isNotBlank()) {
+                Text(
+                    review.reason,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    maxLines = 1,
+                )
+            }
+        }
+        Box(
+            Modifier
+                .defaultMinSize(minHeight = 44.dp)
+                .background(Surface2, RoundedCornerShape(10.dp))
+                .clickable { vm.reopenReview(review) }
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("Restore", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        ArmedDeleteButton(onConfirmedDelete = { vm.deleteReviewWithUndo(review) }, idleLabel = "Del")
     }
 }
 
