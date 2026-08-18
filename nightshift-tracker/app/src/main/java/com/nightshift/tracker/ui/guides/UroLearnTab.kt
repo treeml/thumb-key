@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,12 +18,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,15 +38,19 @@ import com.nightshift.tracker.ui.theme.DangerBody
 import com.nightshift.tracker.ui.theme.DangerRed
 import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.Surface1
+import com.nightshift.tracker.ui.theme.Surface2
 import com.nightshift.tracker.ui.theme.TextSecondary
 
 /**
- * UroDay's Learn tab: procedural tutorials first (the how-to knowledge a
- * urology JMO actually uses), then condition guides in the same format as
- * the Nightshift guides, each with a red never-miss section.
+ * UroDay's Learn tab: a self-test deck, procedural tutorials (the how-to
+ * knowledge a urology JMO actually uses), then condition guides — each with a
+ * red never-miss section.
  */
 @Composable
 fun UroLearnTab() {
+    var showDeck by rememberSaveable { mutableStateOf(false) }
+    var deck by remember { mutableStateOf(uroFlashcards) }
+
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -62,27 +69,91 @@ fun UroLearnTab() {
                         .padding(12.dp),
             )
         }
+
         item {
-            Text(
-                "TUTORIALS — WARD SKILLS",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary,
-                modifier = Modifier.padding(top = 6.dp),
-            )
+            SectionLabel("SELF-TEST — ${uroFlashcards.size} CARDS")
         }
-        items(uroTutorials, key = { "tut-${it.title}" }) { tutorial ->
+        item {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .background(Surface2, RoundedCornerShape(12.dp))
+                        .clickable { showDeck = !showDeck }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+            ) {
+                Text(
+                    if (showDeck) "Hide deck" else "Quiz me",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                if (showDeck) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.clickable { deck = deck.shuffled() },
+                    ) {
+                        Icon(Icons.Filled.Shuffle, contentDescription = null, tint = TextSecondary)
+                        Text("Shuffle", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                    }
+                }
+            }
+        }
+        if (showDeck) {
+            items(deck, key = { "card-${it.question}" }) { card ->
+                FlashcardView(card)
+            }
+        }
+
+        item { SectionLabel("TUTORIALS — WARD SKILLS") }
+        items(allUroTutorials, key = { "tut-${it.title}" }) { tutorial ->
             TutorialCard(tutorial)
         }
-        item {
-            Text(
-                "CONDITION GUIDES",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary,
-                modifier = Modifier.padding(top = 10.dp),
-            )
-        }
-        items(uroGuides, key = { "guide-${it.title}" }) { guide ->
+
+        item { SectionLabel("CONDITION GUIDES") }
+        items(allUroGuides, key = { "guide-${it.title}" }) { guide ->
             GuideCard(guide)
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = TextSecondary,
+        modifier = Modifier.padding(top = 10.dp),
+    )
+}
+
+@Composable
+private fun FlashcardView(card: Flashcard) {
+    var revealed by rememberSaveable(card.question) { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(Surface1, RoundedCornerShape(14.dp))
+            .border(1.dp, Outline, RoundedCornerShape(14.dp))
+            .clickable { revealed = !revealed }
+            .padding(14.dp)
+            .animateContentSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(card.topic.uppercase(), style = MaterialTheme.typography.labelSmall, color = Accent)
+        Text(card.question, style = MaterialTheme.typography.bodyLarge)
+        if (revealed) {
+            Text(card.answer, style = MaterialTheme.typography.bodyMedium, color = CardBody)
+        } else {
+            Text(
+                "Tap to reveal",
+                style = MaterialTheme.typography.labelLarge,
+                color = TextSecondary,
+            )
         }
     }
 }

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- UroDay only: network access for the opt-in Claude note-tidy feature.
+         The Nightshift flavor's manifest has no INTERNET permission. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+</manifest>

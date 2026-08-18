@@ -8,11 +8,15 @@ import androidx.compose.material3.SnackbarResult
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.nightshift.tracker.NightshiftApp
+import com.nightshift.tracker.ai.AiFactory
+import com.nightshift.tracker.ai.AiPrefs
+import com.nightshift.tracker.ai.buildDeidentifiedBatch
 import com.nightshift.tracker.data.Job
 import com.nightshift.tracker.data.Review
 import com.nightshift.tracker.data.Shift
 import com.nightshift.tracker.data.ShiftSnapshot
 import com.nightshift.tracker.data.WardRound
+import com.nightshift.tracker.ui.rounds.buildRoundNote
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,6 +37,19 @@ sealed interface Screen {
     data object ActiveShift : Screen
 
     data class ArchiveDetail(val shiftId: String) : Screen
+
+    /** Review / tidy / email the notes for the selected beds. */
+    data object BatchNotes : Screen
+}
+
+sealed interface AiState {
+    data object Idle : AiState
+
+    data object Running : AiState
+
+    data object Done : AiState
+
+    data class Error(val message: String) : AiState
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -115,6 +132,87 @@ class MainViewModel(
         viewModelScope.launch {
             repo.deleteReview(review)
             undoSnackbar("Review deleted") { repo.restoreReview(review) }
+        }
+
+    // ---- Multi-bed selection and the batch notes screen ----
+
+    val selectedRoundIds = MutableStateFlow<Set<String>>(emptySet())
+
+    /** The working text on the batch screen: raw at first, tidied if asked. */
+    val batchText = MutableStateFlow("")
+    val aiState = MutableStateFlow<AiState>(AiState.Idle)
+
+    /** Set when text came back from the model; cleared once the user ticks it off. */
+    val batchNeedsReview = MutableStateFlow(false)
+
+    fun toggleRoundSelected(id: String) {
+        selectedRoundIds.value =
+            selectedRoundIds.value.let { if (id in it) it - id else it + id }
+    }
+
+    fun selectAllVisibleRounds() {
+        selectedRoundIds.value = rounds.value.filter { !it.seen }.map { it.id }.toSet()
+    }
+
+    fun clearRoundSelection() {
+        selectedRoundIds.value = emptySet()
+    }
+
+    private fun selectedRoundsInOrder(): List<WardRound> =
+        rounds.value.filter { it.id in selectedRoundIds.value }
+
+    fun openBatchNotes() {
+        val selected = selectedRoundsInOrder()
+        if (selected.isEmpty()) return
+        batchText.value = selected.joinToString("\n\n———\n\n") { buildRoundNote(it).trim() }
+        aiState.value = AiState.Idle
+        batchNeedsReview.value = false
+        screen.value = Screen.BatchNotes
+    }
+
+    fun editBatchText(text: String) {
+        batchText.value = text
+    }
+
+    fun markBatchReviewed() {
+        batchNeedsReview.value = false
+    }
+
+    fun hasApiKey(): Boolean = AiPrefs.hasKey(getApplication())
+
+    fun setApiKey(value: String) = AiPrefs.setApiKey(getApplication(), value)
+
+    /**
+     * Sends de-identified notes to Claude, then restores identifiers locally.
+     * Names, MRNs and bed numbers never leave the device.
+     */
+    fun tidySelectedNotes() =
+        viewModelScope.launch {
+            val selected = selectedRoundsInOrder()
+            if (selected.isEmpty()) return@launch
+            val tidier = AiFactory.create(getApplication())
+            if (tidier == null) {
+                aiState.value =
+                    AiState.Error(
+                        if (AiFactory.AVAILABLE) {
+                            "Add your Anthropic API key first."
+                        } else {
+                            "AI tidy is not available in this build."
+                        },
+                    )
+                return@launch
+            }
+            aiState.value = AiState.Running
+            val (payload, deidentifier) = buildDeidentifiedBatch(selected)
+            val result = tidier.tidy(payload)
+            result.fold(
+                onSuccess = { tidied ->
+                    batchText.value = deidentifier.reidentify(tidied)
+                    batchNeedsReview.value = true
+                    aiState.value = AiState.Done
+                },
+                onFailure = { aiState.value = AiState.Error(it.message ?: "Request failed.") },
+            )
         }
 
     fun addRound() = viewModelScope.launch { activeShift.value?.let { repo.addRound(it.id) } }

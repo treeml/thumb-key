@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +47,7 @@ import com.nightshift.tracker.ui.components.PriorityPicker
 import com.nightshift.tracker.ui.jobs.CompletedDrawerHeader
 import com.nightshift.tracker.ui.jobs.collectAsStateValue
 import com.nightshift.tracker.ui.reviews.copyToClipboard
+import com.nightshift.tracker.ui.theme.CardBody
 import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.RoutineGreen
 import com.nightshift.tracker.ui.theme.Surface1
@@ -93,51 +95,131 @@ fun RoundsTab(
     generation: Int,
 ) {
     val rounds = vm.rounds.collectAsStateValue()
+    val selected = vm.selectedRoundIds.collectAsStateValue()
     val active = rounds.filter { !it.seen }
     val seen = rounds.filter { it.seen }
     var showSeen by rememberSaveable { mutableStateOf(false) }
 
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxSize(),
+    Column(Modifier.fillMaxSize()) {
+        if (selected.isNotEmpty()) {
+            SelectionBar(
+                count = selected.size,
+                onSelectAll = { vm.selectAllVisibleRounds() },
+                onClear = { vm.clearRoundSelection() },
+                onOpen = { vm.openBatchNotes() },
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f),
         ) {
-            if (rounds.isEmpty()) {
-                item {
-                    Text(
-                        "No round entries yet. Add each patient before the round starts, " +
-                            "fill in as you go, then mark them Seen.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(top = 24.dp),
+            LazyColumn(
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                if (rounds.isEmpty()) {
+                    item {
+                        Text(
+                            "No round entries yet. Add each patient before the round starts, " +
+                                "fill in as you go, then mark them Seen.\n\nTick the boxes to " +
+                                "batch several beds into one set of notes to tidy and email.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(top = 24.dp),
+                        )
+                    }
+                }
+                items(active, key = { it.id }) { round ->
+                    RoundCard(
+                        round = round,
+                        vm = vm,
+                        generation = generation,
+                        selected = round.id in selected,
                     )
                 }
-            }
-            items(active, key = { it.id }) { round ->
-                RoundCard(round = round, vm = vm, generation = generation)
-            }
-            if (seen.isNotEmpty()) {
-                item(key = "seen-drawer") {
-                    CompletedDrawerHeader(
-                        title = "Seen (${seen.size})",
-                        expanded = showSeen,
-                        onToggle = { showSeen = !showSeen },
-                    )
-                }
-                if (showSeen) {
-                    items(seen, key = { "seen-${it.id}" }) { round ->
-                        SeenRoundRow(round = round, vm = vm)
+                if (seen.isNotEmpty()) {
+                    item(key = "seen-drawer") {
+                        CompletedDrawerHeader(
+                            title = "Seen (${seen.size})",
+                            expanded = showSeen,
+                            onToggle = { showSeen = !showSeen },
+                        )
+                    }
+                    if (showSeen) {
+                        items(seen, key = { "seen-${it.id}" }) { round ->
+                            SeenRoundRow(round = round, vm = vm)
+                        }
                     }
                 }
             }
+            ExtendedFloatingActionButton(
+                onClick = { vm.addRound() },
+                icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                text = { Text("Add patient") },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+            )
         }
-        ExtendedFloatingActionButton(
-            onClick = { vm.addRound() },
-            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-            text = { Text("Add patient") },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+    }
+}
+
+@Composable
+private fun SelectionBar(
+    count: Int,
+    onSelectAll: () -> Unit,
+    onClear: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(Surface2)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(
+            "$count selected",
+            style = MaterialTheme.typography.labelLarge,
+            color = TextSecondary,
         )
+        BarButton("All", onSelectAll)
+        BarButton("Clear", onClear)
+        Spacer(Modifier.weight(1f))
+        Box(
+            Modifier
+                .defaultMinSize(minHeight = 44.dp)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f), RoundedCornerShape(12.dp))
+                .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                .clickable(onClick = onOpen)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "Tidy & email →",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BarButton(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .defaultMinSize(minHeight = 44.dp)
+            .background(Surface1, RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = MaterialTheme.typography.labelLarge, color = TextSecondary)
     }
 }
 
@@ -146,6 +228,7 @@ private fun RoundCard(
     round: WardRound,
     vm: MainViewModel,
     generation: Int,
+    selected: Boolean,
 ) {
     var expanded by rememberSaveable(round.id) { mutableStateOf(true) }
     val context = LocalContext.current
@@ -156,20 +239,28 @@ private fun RoundCard(
             Modifier
                 .fillMaxWidth()
                 .background(Surface1, RoundedCornerShape(16.dp))
-                .border(1.dp, Outline, RoundedCornerShape(16.dp))
-                .animateContentSize(),
+                .border(
+                    width = if (selected) 1.5.dp else 1.dp,
+                    color = if (selected) MaterialTheme.colorScheme.primary else Outline,
+                    shape = RoundedCornerShape(16.dp),
+                ).animateContentSize(),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded }
-                    .padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.fillMaxWidth().padding(end = 14.dp),
         ) {
-            Box(Modifier.size(14.dp).background(accent, CircleShape))
-            Column(Modifier.weight(1f)) {
+            Checkbox(
+                checked = selected,
+                onCheckedChange = { vm.toggleRoundSelected(round.id) },
+            )
+            Box(Modifier.size(12.dp).background(accent, CircleShape))
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clickable { expanded = !expanded }
+                    .padding(vertical = 14.dp, horizontal = 6.dp),
+            ) {
                 val bedLabel = if (round.bed.isBlank()) "Bed —" else "Bed ${round.bed}"
                 Text(
                     "$bedLabel  ·  ${round.patientName.ifBlank { "Unnamed" }}",
@@ -188,6 +279,7 @@ private fun RoundCard(
                 if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                 contentDescription = if (expanded) "Collapse" else "Expand",
                 tint = TextSecondary,
+                modifier = Modifier.clickable { expanded = !expanded },
             )
         }
 
@@ -222,40 +314,45 @@ private fun RoundCard(
                         modifier = Modifier.width(110.dp),
                     )
                 }
-                DbTextField(
-                    value = round.dxOp,
-                    onCommit = { vm.updateRound(round.copy(dxOp = it)) },
+                TeachingField(
+                    cheatKey = "dx",
+                    roundId = round.id,
                     label = "Dx / operation (POD)",
-                    seedKey = "${round.id}-$generation-dx",
-                    modifier = Modifier.fillMaxWidth(),
+                    value = round.dxOp,
+                    generation = generation,
+                    onCommit = { vm.updateRound(round.copy(dxOp = it)) },
                 )
-                DbTextField(
-                    value = round.overnight,
-                    onCommit = { vm.updateRound(round.copy(overnight = it)) },
+                TeachingField(
+                    cheatKey = "overnight",
+                    roundId = round.id,
                     label = "Overnight events",
-                    seedKey = "${round.id}-$generation-on",
-                    modifier = Modifier.fillMaxWidth(),
+                    value = round.overnight,
+                    generation = generation,
+                    onCommit = { vm.updateRound(round.copy(overnight = it)) },
                 )
-                DbTextField(
+                TeachingField(
+                    cheatKey = "exam",
+                    roundId = round.id,
+                    label = "O/E — obs, wound, drains, IDC",
                     value = round.exam,
+                    generation = generation,
                     onCommit = { vm.updateRound(round.copy(exam = it)) },
-                    label = "O/E — obs, wound, drains, IDC (colour/output)",
-                    seedKey = "${round.id}-$generation-exam",
-                    modifier = Modifier.fillMaxWidth(),
                 )
-                DbTextField(
-                    value = round.results,
-                    onCommit = { vm.updateRound(round.copy(results = it)) },
+                TeachingField(
+                    cheatKey = "results",
+                    roundId = round.id,
                     label = "Results (bloods, imaging, histo)",
-                    seedKey = "${round.id}-$generation-res",
-                    modifier = Modifier.fillMaxWidth(),
+                    value = round.results,
+                    generation = generation,
+                    onCommit = { vm.updateRound(round.copy(results = it)) },
                 )
-                DbTextField(
-                    value = round.plan,
-                    onCommit = { vm.updateRound(round.copy(plan = it)) },
+                TeachingField(
+                    cheatKey = "plan",
+                    roundId = round.id,
                     label = "Plan",
-                    seedKey = "${round.id}-$generation-plan",
-                    modifier = Modifier.fillMaxWidth(),
+                    value = round.plan,
+                    generation = generation,
+                    onCommit = { vm.updateRound(round.copy(plan = it)) },
                 )
                 PriorityPicker(selected = round.priority, onSelect = { vm.updateRound(round.copy(priority = it)) })
 
@@ -305,6 +402,71 @@ private fun RoundCard(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Round field with a "?" that expands the teaching prompts for that line. */
+@Composable
+private fun TeachingField(
+    cheatKey: String,
+    roundId: String,
+    label: String,
+    value: String,
+    generation: Int,
+    onCommit: (String) -> Unit,
+) {
+    val cheat = roundCheats[cheatKey]
+    var showCheat by rememberSaveable("$roundId-$cheatKey") { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DbTextField(
+                value = value,
+                onCommit = onCommit,
+                label = label,
+                seedKey = "$roundId-$generation-$cheatKey",
+                modifier = Modifier.weight(1f),
+            )
+            if (cheat != null) {
+                Box(
+                    Modifier
+                        .size(44.dp)
+                        .background(
+                            if (showCheat) cheat.color.copy(alpha = 0.22f) else Surface2,
+                            CircleShape,
+                        ).border(1.dp, if (showCheat) cheat.color else Outline, CircleShape)
+                        .clickable { showCheat = !showCheat },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "?",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (showCheat) cheat.color else TextSecondary,
+                    )
+                }
+            }
+        }
+        if (showCheat && cheat != null) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(cheat.color.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                    .border(1.dp, cheat.color.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    cheat.title,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = cheat.color,
+                )
+                cheat.lines.forEach { line ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("•", color = cheat.color, style = MaterialTheme.typography.bodyMedium)
+                        Text(line, style = MaterialTheme.typography.bodyMedium, color = CardBody)
                     }
                 }
             }

@@ -10,8 +10,26 @@ One codebase, two apps (Gradle product flavors), installable side by side:
   Jobs / Reviews / Guides for overnight cover shifts.
 - **UroDay** (`assembleUrodayRelease`): light theme; tabs Jobs / Rounds /
   Reviews / Learn for urology day shifts — ward-round notes per patient
-  with a round-note generator, plus urology ward-skill tutorials and
-  condition guides.
+  with a round-note generator, plus urology ward-skill tutorials,
+  condition guides and a self-test deck.
+
+### UroDay: batch notes, optional AI tidy, email
+
+Tick any number of beds in the Rounds tab, then **Tidy & email** opens one
+combined set of notes. From there you can copy them, hand them to your
+mail app via the system share sheet, or — optionally — have Claude tidy
+the formatting first.
+
+The AI step is off unless you add your own Anthropic API key (stored only
+in this app's private storage). Before any request leaves the phone,
+patient name, MRN and bed are replaced with placeholders (`[[P1]]`,
+`[[B1]]`, `[[M1]]`) and restored locally afterwards, so identifiers never
+leave the device. The model is instructed to reformat only — never to add
+clinical content — and the tidied text must be explicitly confirmed as
+read before it can be copied or emailed.
+
+Only the **UroDay** flavor declares `INTERNET`. The Nightshift APK has no
+network permission and no API client compiled into it at all.
 
 ## Why this exists
 

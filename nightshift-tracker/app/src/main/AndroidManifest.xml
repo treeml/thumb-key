@@ -1,7 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Deliberately NO android.permission.INTERNET: the app cannot touch the network. -->
+    <!-- Deliberately NO android.permission.INTERNET here: the Nightshift flavor
+         cannot touch the network at all. The UroDay flavor's manifest adds it
+         for the opt-in Claude note-tidy feature only. -->
+
+    <!-- Package visibility so the "Email notes" chooser can see mail apps. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SENDTO" />
+            <data android:scheme="mailto" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="text/plain" />
+        </intent>
+    </queries>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
