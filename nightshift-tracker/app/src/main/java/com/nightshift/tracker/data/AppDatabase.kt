@@ -13,10 +13,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Job::class,
         Review::class,
         WardRound::class,
+        Bed::class,
         ProcedureLog::class,
         LearningItem::class,
     ],
-    version = 4,
+    version = 5,
     // Off deliberately: KSP args are global rather than per-flavor, so two
     // flavors exporting schemas in one build race on the same file. Room still
     // validates the hand-written migrations against the entities at runtime.
@@ -30,6 +31,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun reviewDao(): ReviewDao
 
     abstract fun wardRoundDao(): WardRoundDao
+
+    abstract fun bedDao(): BedDao
 
     abstract fun procedureDao(): ProcedureDao
 
@@ -89,6 +92,31 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        // v5: beds become real rows rather than a text label on each job, so a
+        // bed can be created before it has any jobs. Existing jobs keep their
+        // label and are back-filled onto generated bed rows — nothing is lost.
+        private val MIGRATION_4_5 =
+            object : Migration(4, 5) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `beds` (" +
+                            "`id` TEXT NOT NULL, `shiftId` TEXT NOT NULL, `label` TEXT NOT NULL, " +
+                            "`patientName` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                            "PRIMARY KEY(`id`))",
+                    )
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_beds_shiftId` ON `beds` (`shiftId`)")
+                    db.execSQL("ALTER TABLE jobs ADD COLUMN bedId TEXT")
+                    db.execSQL(
+                        "INSERT INTO beds (id, shiftId, label, patientName, createdAt) " +
+                            "SELECT DISTINCT shiftId || '::' || TRIM(bed), shiftId, TRIM(bed), '', " +
+                            "MIN(createdAt) FROM jobs WHERE TRIM(bed) <> '' GROUP BY shiftId, TRIM(bed)",
+                    )
+                    db.execSQL(
+                        "UPDATE jobs SET bedId = shiftId || '::' || TRIM(bed) WHERE TRIM(bed) <> ''",
+                    )
+                }
+            }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room
@@ -99,7 +127,7 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     // WAL: atomic, crash-safe commits; readers never block the writer.
                     .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     // No destructive fallback — an app update must never wipe data.
                     .build()
                     .also { instance = it }

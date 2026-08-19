@@ -20,6 +20,23 @@ data class Shift(
     val handoverNote: String = "",
 )
 
+/**
+ * A bed on this shift. Beds are created explicitly — you add them one by one
+ * at the start, then open one and put jobs under it — so a bed exists even
+ * before it has any jobs, which a bed-as-text-label model cannot represent.
+ */
+@Entity(
+    tableName = "beds",
+    indices = [Index("shiftId")],
+)
+data class Bed(
+    @PrimaryKey val id: String,
+    val shiftId: String,
+    val label: String,
+    val patientName: String = "",
+    val createdAt: Long,
+)
+
 @Entity(
     tableName = "jobs",
     indices = [Index("shiftId")],
@@ -28,6 +45,9 @@ data class Job(
     @PrimaryKey val id: String,
     val shiftId: String,
     val text: String = "",
+    /** Owning bed, when the job belongs to one. Null = unassigned. */
+    val bedId: String? = null,
+    /** Bed label copied for notes, handover and backups. */
     val bed: String = "",
     val priority: Int = 2,
     val status: Int = 0,
@@ -158,6 +178,7 @@ data class BackupPayload(
     val jobs: List<Job>,
     val reviews: List<Review>,
     val rounds: List<WardRound> = emptyList(),
+    val beds: List<Bed> = emptyList(),
     val procedures: List<ProcedureLog> = emptyList(),
     val learning: List<LearningItem> = emptyList(),
 )
@@ -168,4 +189,5 @@ data class ShiftSnapshot(
     val jobs: List<Job>,
     val reviews: List<Review>,
     val rounds: List<WardRound>,
+    val beds: List<Bed> = emptyList(),
 )

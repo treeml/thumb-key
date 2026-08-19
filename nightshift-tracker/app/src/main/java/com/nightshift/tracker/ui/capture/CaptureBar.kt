@@ -64,13 +64,10 @@ fun CaptureBar(
     modifier: Modifier = Modifier,
     seed: String? = null,
     onSeedConsumed: () -> Unit = {},
-    lockedBed: String = "",
-    onBedChange: (String) -> Unit = {},
-    knownBeds: List<String> = emptyList(),
+    /** Label of the bed currently open, or null when none is. */
+    targetLabel: String? = null,
 ) {
     var raw by remember { mutableStateOf("") }
-    var showBedPicker by remember { mutableStateOf(false) }
-    var newBed by remember { mutableStateOf("") }
     val parsed = remember(raw) { parseCapture(raw) }
     val focusRequester = remember { FocusRequester() }
     val tick = rememberTick()
@@ -106,26 +103,20 @@ fun CaptureBar(
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             modifier = Modifier.horizontalScroll(rememberScrollState()),
         ) {
-            // The pin: tap to choose the bed these lines belong to.
-            val pinTone =
-                if (lockedBed.isBlank()) TextSecondary else MaterialTheme.colorScheme.primary
-            Box(
-                Modifier
-                    .background(pinTone.copy(alpha = 0.14f), RoundedCornerShape(Radius.sm))
-                    .border(1.dp, pinTone.copy(alpha = 0.5f), RoundedCornerShape(Radius.sm))
-                    .clickable { showBedPicker = !showBedPicker }
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            ) {
-                Text(
-                    if (lockedBed.isBlank()) "Pin a bed" else "Bed $lockedBed ✓",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = pinTone,
-                )
-            }
+            // Where these words are going. No mode to set: it follows the bed
+            // you have open, so what you see is what you get.
+            Text(
+                if (targetLabel.isNullOrBlank()) "No bed open" else "→ Bed $targetLabel",
+                style = MaterialTheme.typography.labelSmall,
+                color =
+                    if (targetLabel.isNullOrBlank()) {
+                        TextSecondary
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+            )
             if (raw.isNotBlank()) {
-                if (lineCount > 1) {
-                    Chip("$lineCount jobs", MaterialTheme.colorScheme.primary)
-                }
+                if (lineCount > 1) Chip("$lineCount jobs", MaterialTheme.colorScheme.primary)
                 parsed.chips().forEach { chip ->
                     val tint =
                         when (chip) {
@@ -134,74 +125,7 @@ fun CaptureBar(
                             "ROUTINE" -> priorityColor(3)
                             else -> TextSecondary
                         }
-                    // With a bed pinned and none typed, show where it will land.
                     Chip(chip, tint)
-                }
-                if (parsed.bed.isBlank() && lockedBed.isNotBlank() && lineCount == 1) {
-                    Chip("→ Bed $lockedBed", MaterialTheme.colorScheme.primary)
-                }
-            }
-        }
-
-        if (showBedPicker) {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                ) {
-                    knownBeds.forEach { bed ->
-                        val selected = bed == lockedBed
-                        Box(
-                            Modifier
-                                .background(
-                                    if (selected) {
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                    } else {
-                                        Surface2
-                                    },
-                                    RoundedCornerShape(Radius.sm),
-                                ).clickable {
-                                    onBedChange(bed)
-                                    showBedPicker = false
-                                    runCatching { focusRequester.requestFocus() }
-                                }.padding(horizontal = 14.dp, vertical = 10.dp),
-                        ) {
-                            Text(
-                                bed,
-                                style = MaterialTheme.typography.labelLarge,
-                                color =
-                                    if (selected) MaterialTheme.colorScheme.primary else TextSecondary,
-                            )
-                        }
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    OutlinedTextField(
-                        value = newBed,
-                        onValueChange = { newBed = it },
-                        placeholder = { Text("Other bed", style = MaterialTheme.typography.bodyMedium) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions =
-                            KeyboardActions(
-                                onDone = {
-                                    onBedChange(newBed)
-                                    newBed = ""
-                                    showBedPicker = false
-                                },
-                            ),
-                        modifier = Modifier.width(150.dp),
-                    )
-                    Box(
-                        Modifier
-                            .background(Surface2, RoundedCornerShape(Radius.sm))
-                            .clickable {
-                                onBedChange("")
-                                showBedPicker = false
-                            }.padding(horizontal = 14.dp, vertical = 10.dp),
-                    ) {
-                        Text("Unpin", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                    }
                 }
             }
         }
@@ -213,7 +137,7 @@ fun CaptureBar(
                     onValueChange = { raw = it },
                     placeholder = {
                         Text(
-                            if (lockedBed.isBlank()) {
+                            if (targetLabel.isNullOrBlank()) {
                                 "b12 chase K+ !1 30m"
                             } else {
                                 "chase K+ ; order CT ; call family"

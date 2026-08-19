@@ -43,6 +43,9 @@ interface JobDao {
     @Query("SELECT * FROM jobs WHERE id = :id")
     suspend fun byId(id: String): Job?
 
+    @Query("SELECT * FROM jobs WHERE bedId = :bedId")
+    suspend fun forBedOnce(bedId: String): List<Job>
+
     @Query("SELECT * FROM jobs WHERE timerEndAt IS NOT NULL")
     suspend fun withTimers(): List<Job>
 
@@ -57,6 +60,24 @@ interface JobDao {
 
     @Query("SELECT * FROM jobs")
     suspend fun allOnce(): List<Job>
+}
+
+@Dao
+interface BedDao {
+    @Query("SELECT * FROM beds WHERE shiftId = :shiftId ORDER BY createdAt")
+    fun forShift(shiftId: String): Flow<List<Bed>>
+
+    @Query("SELECT * FROM beds WHERE shiftId = :shiftId ORDER BY createdAt")
+    suspend fun forShiftOnce(shiftId: String): List<Bed>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(bed: Bed)
+
+    @Query("DELETE FROM beds WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("SELECT * FROM beds")
+    suspend fun allOnce(): List<Bed>
 }
 
 @Dao

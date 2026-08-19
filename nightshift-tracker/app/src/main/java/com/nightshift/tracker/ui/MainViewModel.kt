@@ -11,6 +11,7 @@ import com.nightshift.tracker.NightshiftApp
 import com.nightshift.tracker.ai.AiFactory
 import com.nightshift.tracker.ai.AiPrefs
 import com.nightshift.tracker.ai.deidentify
+import com.nightshift.tracker.data.Bed
 import com.nightshift.tracker.data.Job
 import com.nightshift.tracker.data.LearningItem
 import com.nightshift.tracker.data.ProcedureLog
@@ -101,6 +102,12 @@ class MainViewModel(
         activeShift
             .flatMapLatest { shift ->
                 if (shift == null) flowOf(emptyList()) else repo.reviewDao.forShift(shift.id)
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val beds: StateFlow<List<Bed>> =
+        activeShift
+            .flatMapLatest { shift ->
+                if (shift == null) flowOf(emptyList()) else repo.bedDao.forShift(shift.id)
             }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val rounds: StateFlow<List<WardRound>> =
@@ -375,54 +382,80 @@ class MainViewModel(
     /** Text pushed into the capture bar; "" simply focuses it. */
     val captureSeed = MutableStateFlow<String?>(null)
 
-    /**
-     * The bed the capture bar is currently pinned to.
-     *
-     * Written up after a paper round, jobs arrive in clumps: three for bed 12,
-     * two for bed 14. Pinning the bed once means the rest is just the words —
-     * a line that names its own bed still wins.
-     */
-    val lockedBed = MutableStateFlow("")
-
-    fun setLockedBed(bed: String) {
-        lockedBed.value = bed.trim()
-    }
-
     fun clearCaptureSeed() {
         captureSeed.value = null
     }
 
     /**
-     * "New job for this bed" from anywhere: seeds the capture bar with the bed
-     * already typed and drops the user on the Jobs tab with the caret ready.
+     * The bed currently open on the Jobs tab. Opening a bed IS the target for
+     * the fast bar — there is no separate mode to set, because a mode you have
+     * to remember is a mode you will get wrong at speed.
      */
-    fun startJobForBed(bed: String) {
-        lockedBed.value = bed.trim()
-        activeTab.value = 0
-        captureSeed.value = ""
+    val openBedId = MutableStateFlow<String?>(null)
+
+    fun openBed(bedId: String?) {
+        openBedId.value = bedId
+        if (bedId != null) captureSeed.value = ""
     }
+
+    fun addBed(label: String) =
+        viewModelScope.launch {
+            val shift = activeShift.value ?: return@launch
+            if (label.isBlank()) return@launch
+            val bed = repo.addBed(shift.id, label)
+            openBedId.value = bed.id
+        }
+
+    fun updateBed(bed: Bed) = viewModelScope.launch { repo.updateBed(bed) }
+
+    fun deleteBedWithUndo(bed: Bed) =
+        viewModelScope.launch {
+            val orphaned = repo.deleteBed(bed)
+            if (openBedId.value == bed.id) openBedId.value = null
+            undoSnackbar("Bed deleted — its jobs kept") { repo.restoreBed(bed, orphaned) }
+        }
+
+    /** From a ward round card: open (creating if needed) that bed on Jobs. */
+    fun startJobForBed(label: String) =
+        viewModelScope.launch {
+            val shift = activeShift.value ?: return@launch
+            val trimmed = label.trim()
+            val existing = beds.value.firstOrNull { it.label.equals(trimmed, ignoreCase = true) }
+            val bed = existing ?: if (trimmed.isBlank()) null else repo.addBed(shift.id, trimmed)
+            openBedId.value = bed?.id
+            activeTab.value = 0
+            captureSeed.value = ""
+        }
 
     /**
      * One line in, structured job out — or several, since writing up a round
      * comes in clumps. Newlines and semicolons split into separate jobs, so
      * "chase bloods; order CT; call family" is three jobs, not one.
      *
-     * Each job commits to Room as it is created, so they exist on disk before
-     * the next line is typed.
+     * Jobs land on whichever bed is open. A line naming its own bed still wins.
      */
     fun captureJob(raw: String) =
         viewModelScope.launch {
             val shift = activeShift.value ?: return@launch
+            val current = beds.value.firstOrNull { it.id == openBedId.value }
             val lines = raw.split('\n', ';').map { it.trim() }.filter { it.isNotBlank() }
             for (line in lines) {
                 val parsed = parseCapture(line)
                 if (parsed.isEmpty) continue
+                // A bed typed into the line takes precedence, creating it if new.
+                val target =
+                    if (parsed.bed.isNotBlank()) {
+                        beds.value.firstOrNull { it.label.equals(parsed.bed, ignoreCase = true) }
+                            ?: repo.addBed(shift.id, parsed.bed)
+                    } else {
+                        current
+                    }
                 val job = repo.addJob(shift.id)
                 val withDetail =
                     job.copy(
                         text = parsed.text,
-                        // An explicit bed in the line beats the pinned one.
-                        bed = parsed.bed.ifBlank { lockedBed.value },
+                        bedId = target?.id,
+                        bed = target?.label.orEmpty(),
                         priority = parsed.priority,
                     )
                 repo.updateJob(withDetail)
@@ -430,6 +463,12 @@ class MainViewModel(
                     repo.setJobTimer(withDetail, System.currentTimeMillis() + mins * 60_000L)
                 }
             }
+        }
+
+    /** Move a single job to another bed (or off the beds entirely). */
+    fun moveJobToBed(job: Job, bed: Bed?) =
+        viewModelScope.launch {
+            repo.updateJob(job.copy(bedId = bed?.id, bed = bed?.label.orEmpty()))
         }
 
     // ---- Wellbeing ----

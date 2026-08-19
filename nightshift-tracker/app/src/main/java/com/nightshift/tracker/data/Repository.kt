@@ -21,6 +21,7 @@ class Repository(
     val jobDao get() = db.jobDao()
     val reviewDao get() = db.reviewDao()
     val wardRoundDao get() = db.wardRoundDao()
+    val bedDao get() = db.bedDao()
     val procedureDao get() = db.procedureDao()
     val learningDao get() = db.learningDao()
 
@@ -62,10 +63,12 @@ class Repository(
                     jobs = jobDao.forShiftOnce(shift.id),
                     reviews = reviewDao.forShiftOnce(shift.id),
                     rounds = wardRoundDao.forShiftOnce(shift.id),
+                    beds = bedDao.forShiftOnce(shift.id),
                 )
             snapshot.jobs.forEach { jobDao.delete(it.id) }
             snapshot.reviews.forEach { reviewDao.delete(it.id) }
             snapshot.rounds.forEach { wardRoundDao.delete(it.id) }
+            snapshot.beds.forEach { bedDao.delete(it.id) }
             shiftDao.delete(shift.id)
             snapshot
         }
@@ -73,9 +76,53 @@ class Repository(
     suspend fun restoreShiftCascade(data: ShiftSnapshot) =
         commit {
             shiftDao.upsert(data.shift)
+            data.beds.forEach { bedDao.upsert(it) }
             data.jobs.forEach { jobDao.upsert(it) }
             data.reviews.forEach { reviewDao.upsert(it) }
             data.rounds.forEach { wardRoundDao.upsert(it) }
+        }
+
+    // ---- Beds ----
+
+    suspend fun addBed(shiftId: String, label: String): Bed =
+        commit {
+            val bed =
+                Bed(
+                    id = UUID.randomUUID().toString(),
+                    shiftId = shiftId,
+                    label = label.trim(),
+                    createdAt = System.currentTimeMillis(),
+                )
+            bedDao.upsert(bed)
+            bed
+        }
+
+    /** Renaming a bed rewrites the label on its jobs, so notes stay truthful. */
+    suspend fun updateBed(bed: Bed) =
+        commit {
+            bedDao.upsert(bed)
+            jobDao.forBedOnce(bed.id).forEach { job ->
+                if (job.bed != bed.label) jobDao.update(job.copy(bed = bed.label))
+            }
+        }
+
+    /**
+     * Deleting a bed keeps its jobs — they fall back to unassigned rather than
+     * disappearing with the container. Losing work to a mis-tap is the one
+     * thing this app must never do.
+     */
+    suspend fun deleteBed(bed: Bed): List<Job> =
+        commit {
+            val orphaned = jobDao.forBedOnce(bed.id)
+            orphaned.forEach { jobDao.update(it.copy(bedId = null)) }
+            bedDao.delete(bed.id)
+            orphaned
+        }
+
+    suspend fun restoreBed(bed: Bed, jobs: List<Job>) =
+        commit {
+            bedDao.upsert(bed)
+            jobs.forEach { jobDao.update(it.copy(bedId = bed.id, bed = bed.label)) }
         }
 
     suspend fun addJob(shiftId: String): Job =

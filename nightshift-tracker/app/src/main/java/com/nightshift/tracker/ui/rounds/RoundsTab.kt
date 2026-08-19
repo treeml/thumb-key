@@ -375,7 +375,7 @@ private fun RoundCard(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     ArmedDeleteButton(onConfirmedDelete = { vm.deleteRoundWithUndo(round) })
-                    NsAction("+ Job", { vm.startJobForBed(round.bed) })
+                    NsAction("+ Jobs", { vm.startJobForBed(round.bed) })
                     Spacer(Modifier.weight(1f))
                     Box(
                         Modifier

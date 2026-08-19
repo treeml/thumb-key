@@ -22,7 +22,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -41,7 +46,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import com.nightshift.tracker.data.Bed
 import com.nightshift.tracker.data.Job
 import com.nightshift.tracker.ui.MainViewModel
 import com.nightshift.tracker.ui.components.ArmedDeleteButton
@@ -53,6 +60,7 @@ import com.nightshift.tracker.ui.capture.CaptureBar
 import com.nightshift.tracker.ui.design.HandedActions
 import com.nightshift.tracker.ui.design.NsAction
 import com.nightshift.tracker.ui.design.NsCard
+import com.nightshift.tracker.ui.design.Radius
 import com.nightshift.tracker.ui.design.NsChip
 import com.nightshift.tracker.ui.design.Space
 import com.nightshift.tracker.ui.settings.AppSettings
@@ -70,12 +78,12 @@ import kotlinx.coroutines.delay
 private val statusLabels = listOf("Not started", "In progress", "Done")
 
 /**
- * Beds sort naturally: 2 before 10, letters after numbers, unbedded last.
+ * Beds sort naturally: 2 before 10, letters after numbers.
  * A plain string sort puts bed 10 before bed 2, which is exactly the kind of
  * small wrongness that makes a list feel untrustworthy on a round.
  */
-private fun bedRank(bed: String): Pair<Int, String> {
-    val trimmed = bed.trim()
+private fun bedRank(label: String): Pair<Int, String> {
+    val trimmed = label.trim()
     if (trimmed.isEmpty()) return Int.MAX_VALUE to ""
     val leadingNumber = trimmed.takeWhile { it.isDigit() }.toIntOrNull()
     return (leadingNumber ?: (Int.MAX_VALUE - 1)) to trimmed.lowercase()
@@ -90,40 +98,33 @@ private fun jobOrder(jobs: List<Job>, now: Long): List<Job> =
         ),
     )
 
+/**
+ * Bed-first jobs board.
+ *
+ * Add beds one by one, tap one to open it, type its jobs. The bar at the
+ * bottom always writes to the bed that is open — no mode, no prefix, no pin.
+ */
 @Composable
 fun JobsTab(
     vm: MainViewModel,
     generation: Int,
 ) {
     val jobs = vm.jobs.collectAsStateValue()
+    val beds = vm.beds.collectAsStateValue()
+    val openBedId = vm.openBedId.collectAsStateValue()
+    val seed = vm.captureSeed.collectAsStateValue()
     val context = LocalContext.current
     val byBed by AppSettings.groupJobsByBed.collectAsStateWithLifecycle()
-    val seed = vm.captureSeed.collectAsStateValue()
-    val lockedBed = vm.lockedBed.collectAsStateValue()
-    val rounds = vm.rounds.collectAsStateValue()
-
-    // Beds already in play this shift — from the round list and existing jobs —
-    // so pinning one after a paper round is a tap, not typing.
-    val knownBeds =
-        (rounds.map { it.bed } + jobs.map { it.bed })
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .sortedWith(compareBy({ bedRank(it).first }, { bedRank(it).second }))
     val now = System.currentTimeMillis()
 
     val open = jobs.filter { it.status != 2 }
     val completed = jobs.filter { it.status == 2 }
     var showCompleted by rememberSaveable { mutableStateOf(false) }
+    var newBed by rememberSaveable { mutableStateOf("") }
 
-    // Urgency view: anything whose timer has blown floats to the top, whatever
-    // its priority. Nothing else re-orders under the user's thumb mid-round.
-    val flat = jobOrder(open, now)
-    val beds =
-        open
-            .groupBy { it.bed.trim() }
-            .toList()
-            .sortedWith(compareBy({ bedRank(it.first).first }, { bedRank(it.first).second }))
+    val sortedBeds = beds.sortedWith(compareBy({ bedRank(it.label).first }, { bedRank(it.label).second }))
+    val unassigned = open.filter { it.bedId == null }
+    val openBed = beds.firstOrNull { it.id == openBedId }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -131,10 +132,11 @@ fun JobsTab(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
         ) {
-            Text("Order", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-            SortPill("Urgency", !byBed) { AppSettings.setGroupJobsByBed(context, false) }
-            SortPill("By bed", byBed) { AppSettings.setGroupJobsByBed(context, true) }
+            Text("View", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            SortPill("Beds", byBed) { AppSettings.setGroupJobsByBed(context, true) }
+            SortPill("All jobs", !byBed) { AppSettings.setGroupJobsByBed(context, false) }
         }
+
         Box(
             Modifier
                 .fillMaxWidth()
@@ -145,35 +147,112 @@ fun JobsTab(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (jobs.isEmpty()) {
-                    item {
-                        Text(
-                            "Nothing on the list.\n\nType or dictate a line below — " +
-                                "\"b12 chase K+ !1 30m\" becomes bed 12, urgent, with a " +
-                                "30-minute alarm.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary,
-                            modifier = Modifier.padding(top = 24.dp),
-                        )
-                    }
-                }
-
                 if (byBed) {
-                    beds.forEach { (bed, bedJobs) ->
-                        item(key = "bed-$bed") {
-                            BedHeader(
+                    item(key = "add-bed") {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            OutlinedTextField(
+                                value = newBed,
+                                onValueChange = { newBed = it },
+                                placeholder = { Text("Add bed", style = MaterialTheme.typography.bodyMedium) },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions =
+                                    KeyboardActions(
+                                        onDone = {
+                                            vm.addBed(newBed)
+                                            newBed = ""
+                                        },
+                                    ),
+                                modifier = Modifier.weight(1f),
+                            )
+                            NsAction(
+                                label = "Add",
+                                onClick = {
+                                    vm.addBed(newBed)
+                                    newBed = ""
+                                },
+                                tone = MaterialTheme.colorScheme.primary,
+                                filled = true,
+                                enabled = newBed.isNotBlank(),
+                            )
+                        }
+                    }
+
+                    if (beds.isEmpty()) {
+                        item {
+                            Text(
+                                "Add your beds one at a time, then tap a bed to open it and " +
+                                    "type its jobs. Whatever bed is open is where the bar at " +
+                                    "the bottom puts them.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(vertical = 12.dp),
+                            )
+                        }
+                    }
+
+                    sortedBeds.forEach { bed ->
+                        val bedJobs = open.filter { it.bedId == bed.id }
+                        val isOpen = bed.id == openBedId
+                        item(key = "bed-${bed.id}") {
+                            BedRow(
                                 bed = bed,
                                 jobs = bedJobs,
                                 now = now,
-                                onAdd = { vm.startJobForBed(bed) },
+                                isOpen = isOpen,
+                                onToggle = { vm.openBed(if (isOpen) null else bed.id) },
+                                onDelete = { vm.deleteBedWithUndo(bed) },
+                                onRename = { vm.updateBed(bed.copy(label = it)) },
+                                onPatient = { vm.updateBed(bed.copy(patientName = it)) },
+                                generation = generation,
                             )
                         }
-                        items(jobOrder(bedJobs, now), key = { it.id }) { job ->
+                        if (isOpen) {
+                            items(jobOrder(bedJobs, now), key = { it.id }) { job ->
+                                JobCard(job = job, vm = vm, generation = generation)
+                            }
+                            if (bedJobs.isEmpty()) {
+                                item(key = "empty-${bed.id}") {
+                                    Text(
+                                        "No jobs yet — type them below.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = TextSecondary,
+                                        modifier = Modifier.padding(start = 8.dp, bottom = 4.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (unassigned.isNotEmpty()) {
+                        item(key = "unassigned-header") {
+                            Text(
+                                "NO BED (${unassigned.size})",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(top = 10.dp),
+                            )
+                        }
+                        items(jobOrder(unassigned, now), key = { it.id }) { job ->
                             JobCard(job = job, vm = vm, generation = generation)
                         }
                     }
                 } else {
-                    items(flat, key = { it.id }) { job ->
+                    if (open.isEmpty()) {
+                        item {
+                            Text(
+                                "Nothing on the list.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(top = 24.dp),
+                            )
+                        }
+                    }
+                    items(jobOrder(open, now), key = { it.id }) { job ->
                         JobCard(job = job, vm = vm, generation = generation)
                     }
                 }
@@ -192,32 +271,14 @@ fun JobsTab(
                         }
                     }
                 }
-                item(key = "blank-job") {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
-                            .background(Surface2, RoundedCornerShape(12.dp))
-                            .clickable { vm.addJob() }
-                            .padding(12.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "+ Blank job card",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = TextSecondary,
-                        )
-                    }
-                }
             }
         }
+
         CaptureBar(
             onCapture = { vm.captureJob(it) },
             seed = seed,
             onSeedConsumed = { vm.clearCaptureSeed() },
-            lockedBed = lockedBed,
-            onBedChange = { vm.setLockedBed(it) },
-            knownBeds = knownBeds,
+            targetLabel = openBed?.label,
         )
     }
 }
@@ -244,34 +305,86 @@ private fun SortPill(
     }
 }
 
-/** Heading for one bed's jobs, with a shortcut to add another for that bed. */
+/** One bed: tap to open it, which is also what aims the bar at the bottom. */
 @Composable
-private fun BedHeader(
-    bed: String,
+private fun BedRow(
+    bed: Bed,
     jobs: List<Job>,
     now: Long,
-    onAdd: () -> Unit,
+    isOpen: Boolean,
+    onToggle: () -> Unit,
+    onDelete: () -> Unit,
+    onRename: (String) -> Unit,
+    onPatient: (String) -> Unit,
+    generation: Int,
 ) {
     val overdue = jobs.count { it.timerEndAt != null && it.timerEndAt <= now }
     val urgent = jobs.count { it.priority == 1 }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Space.sm),
-        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+    val tone = if (isOpen) MaterialTheme.colorScheme.primary else Outline
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(if (isOpen) Surface2 else Surface1, RoundedCornerShape(Radius.lg))
+            .border(if (isOpen) 1.5.dp else 1.dp, tone, RoundedCornerShape(Radius.lg)),
     ) {
-        Text(
-            if (bed.isBlank()) "No bed" else "Bed $bed",
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-            "${jobs.size}",
-            style = MaterialTheme.typography.labelSmall,
-            color = TextSecondary,
-        )
-        if (overdue > 0) NsChip("$overdue overdue", UrgentRed, strong = true)
-        if (urgent > 0 && overdue == 0) NsChip("$urgent urgent", UrgentRed)
-        Box(Modifier.weight(1f))
-        NsAction("+ Job", onAdd, haptic = false)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(Space.md),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Bed ${bed.label}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+                if (bed.patientName.isNotBlank()) {
+                    Text(bed.patientName, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                }
+            }
+            if (overdue > 0) {
+                NsChip("$overdue overdue", UrgentRed, strong = true)
+            } else if (urgent > 0) {
+                NsChip("$urgent urgent", UrgentRed)
+            }
+            Text(
+                "${jobs.size}",
+                style = MaterialTheme.typography.titleMedium,
+                color = if (jobs.isEmpty()) TextSecondary else MaterialTheme.colorScheme.onSurface,
+            )
+            Icon(
+                if (isOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (isOpen) "Close bed" else "Open bed",
+                tint = TextSecondary,
+            )
+        }
+        if (isOpen) {
+            Column(
+                Modifier.padding(start = Space.md, end = Space.md, bottom = Space.md),
+                verticalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    DbTextField(
+                        value = bed.label,
+                        onCommit = onRename,
+                        label = "Bed",
+                        seedKey = "${bed.id}-$generation-label",
+                        singleLine = true,
+                        modifier = Modifier.width(110.dp),
+                    )
+                    DbTextField(
+                        value = bed.patientName,
+                        onCommit = onPatient,
+                        label = "Patient (optional)",
+                        seedKey = "${bed.id}-$generation-name",
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                ArmedDeleteButton(onConfirmedDelete = onDelete, idleLabel = "Remove bed")
+            }
+        }
     }
 }
 
