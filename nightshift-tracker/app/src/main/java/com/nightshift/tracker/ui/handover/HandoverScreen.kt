@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
@@ -37,11 +38,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.nightshift.tracker.ai.AiFactory
+import com.nightshift.tracker.ui.AiState
 import com.nightshift.tracker.ui.MainViewModel
+import com.nightshift.tracker.ui.design.NsAction
 import com.nightshift.tracker.ui.Screen
 import com.nightshift.tracker.ui.components.DbTextField
 import com.nightshift.tracker.ui.jobs.collectAsStateValue
 import com.nightshift.tracker.ui.reviews.copyToClipboard
+import com.nightshift.tracker.ui.theme.DangerRed
 import com.nightshift.tracker.ui.theme.Ink
 import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.Surface2
@@ -58,6 +63,8 @@ fun HandoverScreen(vm: MainViewModel) {
     val text = vm.handoverText.collectAsStateValue()
     val shift = vm.activeShift.collectAsStateValue()
     val generation = vm.dataGeneration.collectAsStateValue()
+    val aiState = vm.aiState.collectAsStateValue()
+    val needsReview = vm.batchNeedsReview.collectAsStateValue()
 
     Scaffold(
         containerColor = Ink,
@@ -117,6 +124,30 @@ fun HandoverScreen(vm: MainViewModel) {
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
+            }
+
+            if (AiFactory.AVAILABLE) {
+                NsAction(
+                    label = if (aiState is AiState.Running) "Tidying…" else "Tidy with Claude",
+                    onClick = { vm.tidyHandover() },
+                    icon = Icons.Filled.AutoAwesome,
+                    tone = MaterialTheme.colorScheme.primary,
+                    filled = true,
+                    enabled = aiState !is AiState.Running,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                (aiState as? AiState.Error)?.let {
+                    Text(it.message, style = MaterialTheme.typography.bodyMedium, color = DangerRed)
+                }
+            }
+            if (needsReview) {
+                NsAction(
+                    label = "AI-tidied — tap when you've checked it",
+                    onClick = { vm.markBatchReviewed() },
+                    tone = DangerRed,
+                    filled = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
 
             androidx.compose.material3.OutlinedTextField(

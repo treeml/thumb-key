@@ -47,6 +47,13 @@ import com.nightshift.tracker.ui.MainViewModel
 import com.nightshift.tracker.ui.components.ArmedDeleteButton
 import com.nightshift.tracker.ui.components.DbTextField
 import com.nightshift.tracker.ui.components.PriorityPicker
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import com.nightshift.tracker.ai.AiFactory
+import com.nightshift.tracker.ui.design.NsAction
+import com.nightshift.tracker.ui.design.SectionLabel
+import com.nightshift.tracker.ui.design.Space
+import com.nightshift.tracker.ui.design.fabAlignment
 import com.nightshift.tracker.ui.jobs.CompletedDrawerHeader
 import com.nightshift.tracker.ui.jobs.collectAsStateValue
 import com.nightshift.tracker.ui.theme.CardBody
@@ -126,10 +133,11 @@ fun ReviewsTab(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
+            item(key = "templates") { TemplateRow(vm) }
             if (reviews.isEmpty()) {
                 item {
                     Text(
-                        "No reviews this shift.",
+                        "No reviews this shift. Start from a template above, or a blank card.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
                         modifier = Modifier.padding(top = 24.dp),
@@ -157,9 +165,34 @@ fun ReviewsTab(
         ExtendedFloatingActionButton(
             onClick = { vm.addReview() },
             icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-            text = { Text("New review") },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+            text = { Text("Blank review") },
+            modifier = Modifier.align(fabAlignment()).padding(20.dp),
         )
+    }
+}
+
+/**
+ * The calls that come in over and over, one tap from a started review. A
+ * template fills the reason, a starting priority and a workup PROMPT — never
+ * a finding.
+ */
+@Composable
+private fun TemplateRow(vm: MainViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        SectionLabel("START FROM")
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+        ) {
+            reviewTemplates.forEach { template ->
+                NsAction(
+                    label = template.label,
+                    onClick = { vm.addReviewFromTemplate(template) },
+                    tone = priorityColor(template.priority),
+                    filled = true,
+                )
+            }
+        }
     }
 }
 
@@ -169,7 +202,10 @@ private fun ReviewCard(
     vm: MainViewModel,
     generation: Int,
 ) {
-    var expanded by rememberSaveable(review.id) { mutableStateOf(true) }
+    // Filled reviews collapse to their header; a fresh one opens ready to type.
+    var expanded by rememberSaveable(review.id) {
+        mutableStateOf(review.reason.isBlank() && review.impression.isBlank())
+    }
     val context = LocalContext.current
     val accent = priorityColor(review.priority)
 
@@ -345,6 +381,15 @@ private fun ReviewCard(
                 }
 
                 // DHR note generator — appears once there's something to write.
+                if (review.impression.isNotBlank() || review.plan.isNotBlank()) {
+                    NsAction(
+                        label = if (AiFactory.AVAILABLE) "Open note — tidy, copy or email" else "Open note — copy or email",
+                        onClick = {
+                            vm.openNoteReview(buildDhrNote(review), "Clinical review note")
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
                 if (review.impression.isNotBlank() || review.plan.isNotBlank()) {
                     Box(
                         Modifier

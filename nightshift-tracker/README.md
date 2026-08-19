@@ -13,6 +13,15 @@ One codebase, two apps (Gradle product flavors), installable side by side:
   with a round-note generator, plus urology ward-skill tutorials,
   condition guides and a self-test deck.
 
+### Designed for one hand — either hand
+
+Settings offers a left-handed layout that mirrors the interface rather than
+shrinking it: the capture bar's send key, the add buttons, the Done action
+on every job card and the tick boxes on round cards all move inside the
+left thumb's arc, and destructive actions move out of it. Also there:
+larger text, a warm night-vision tint that keeps dark adaptation, and
+haptic confirmation so a tap can be felt without looking.
+
 ### UroDay: batch notes, optional AI tidy, email
 
 Tick any number of beds in the Rounds tab, then **Tidy & email** opens one

@@ -10,7 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.nightshift.tracker.NightshiftApp
 import com.nightshift.tracker.ai.AiFactory
 import com.nightshift.tracker.ai.AiPrefs
-import com.nightshift.tracker.ai.buildDeidentifiedBatch
+import com.nightshift.tracker.ai.deidentify
 import com.nightshift.tracker.data.Job
 import com.nightshift.tracker.data.LearningItem
 import com.nightshift.tracker.data.ProcedureLog
@@ -20,6 +20,7 @@ import com.nightshift.tracker.data.ShiftSnapshot
 import com.nightshift.tracker.data.WardRound
 import com.nightshift.tracker.ui.capture.parseCapture
 import com.nightshift.tracker.ui.handover.buildHandover
+import com.nightshift.tracker.ui.reviews.ReviewTemplate
 import com.nightshift.tracker.ui.rounds.buildRoundNote
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +54,9 @@ sealed interface Screen {
 
     /** Procedure logbook + learning questions; lives across shifts. */
     data object Logbook : Screen
+
+    /** Handedness, readability, note tidying. */
+    data object Settings : Screen
 }
 
 sealed interface AiState {
@@ -139,6 +143,31 @@ class MainViewModel(
 
     fun addReview() = viewModelScope.launch { activeShift.value?.let { repo.addReview(it.id) } }
 
+    /**
+     * Starts a review from a presentation template: it fills the reason, the
+     * priority and a workup PROMPT list. It never fills findings — a template
+     * that pre-writes clinical findings is a lie waiting to be signed.
+     */
+    fun addReviewFromTemplate(template: ReviewTemplate) =
+        viewModelScope.launch {
+            val shift = activeShift.value ?: return@launch
+            val review = repo.addReview(shift.id)
+            repo.updateReview(
+                review.copy(
+                    reason = template.reason,
+                    priority = template.priority,
+                    investigations = template.workupPrompt,
+                ),
+            )
+        }
+
+    /** Push a live or expired timer out by [minutes] without retyping anything. */
+    fun snoozeJob(job: Job, minutes: Int) =
+        viewModelScope.launch {
+            val base = maxOf(System.currentTimeMillis(), job.timerEndAt ?: 0L)
+            repo.setJobTimer(job, base + minutes * 60_000L)
+        }
+
     fun updateReview(review: Review) = viewModelScope.launch { repo.updateReview(review) }
 
     fun deleteReviewWithUndo(review: Review) =
@@ -151,8 +180,11 @@ class MainViewModel(
 
     val selectedRoundIds = MutableStateFlow<Set<String>>(emptySet())
 
-    /** The working text on the batch screen: raw at first, tidied if asked. */
+    /** The working text on the note screen: raw at first, tidied if asked. */
     val batchText = MutableStateFlow("")
+
+    /** What the note screen is showing, used for its title and email subject. */
+    val batchSubject = MutableStateFlow("Notes")
     val aiState = MutableStateFlow<AiState>(AiState.Idle)
 
     /** Set when text came back from the model; cleared once the user ticks it off. */
@@ -177,7 +209,16 @@ class MainViewModel(
     fun openBatchNotes() {
         val selected = selectedRoundsInOrder()
         if (selected.isEmpty()) return
-        batchText.value = selected.joinToString("\n\n———\n\n") { buildRoundNote(it).trim() }
+        openNoteReview(
+            text = selected.joinToString("\n\n———\n\n") { buildRoundNote(it).trim() },
+            subject = "Ward round notes",
+        )
+    }
+
+    /** Opens any generated note on the review/tidy/send screen. */
+    fun openNoteReview(text: String, subject: String) {
+        batchText.value = text
+        batchSubject.value = subject
         aiState.value = AiState.Idle
         batchNeedsReview.value = false
         screen.value = Screen.BatchNotes
@@ -196,31 +237,33 @@ class MainViewModel(
     fun setApiKey(value: String) = AiPrefs.setApiKey(getApplication(), value)
 
     /**
-     * Sends de-identified notes to Claude, then restores identifiers locally.
+     * Sends de-identified text to Claude and restores identifiers locally.
      * Names, MRNs and bed numbers never leave the device.
      */
-    fun tidySelectedNotes() =
+    private suspend fun runTidy(text: String): Result<String> {
+        val tidier = AiFactory.create(getApplication())
+        if (tidier == null) {
+            return Result.failure(
+                IllegalStateException(
+                    if (AiFactory.AVAILABLE) {
+                        "Add your Anthropic API key in Settings first."
+                    } else {
+                        "Note tidying is not available in this build."
+                    },
+                ),
+            )
+        }
+        val (payload, deidentifier) = deidentify(text, reviews.value, rounds.value)
+        return tidier.tidy(payload).map { deidentifier.reidentify(it) }
+    }
+
+    fun tidyCurrentNote() =
         viewModelScope.launch {
-            val selected = selectedRoundsInOrder()
-            if (selected.isEmpty()) return@launch
-            val tidier = AiFactory.create(getApplication())
-            if (tidier == null) {
-                aiState.value =
-                    AiState.Error(
-                        if (AiFactory.AVAILABLE) {
-                            "Add your Anthropic API key first."
-                        } else {
-                            "AI tidy is not available in this build."
-                        },
-                    )
-                return@launch
-            }
+            if (batchText.value.isBlank()) return@launch
             aiState.value = AiState.Running
-            val (payload, deidentifier) = buildDeidentifiedBatch(selected)
-            val result = tidier.tidy(payload)
-            result.fold(
-                onSuccess = { tidied ->
-                    batchText.value = deidentifier.reidentify(tidied)
+            runTidy(batchText.value).fold(
+                onSuccess = {
+                    batchText.value = it
                     batchNeedsReview.value = true
                     aiState.value = AiState.Done
                 },
@@ -228,73 +271,19 @@ class MainViewModel(
             )
         }
 
-    fun addRound() = viewModelScope.launch { activeShift.value?.let { repo.addRound(it.id) } }
-
-    fun updateRound(round: WardRound) = viewModelScope.launch { repo.updateRound(round) }
-
-    fun markRoundSeen(round: WardRound) = viewModelScope.launch { repo.updateRound(round.copy(seen = true)) }
-
-    fun reopenRound(round: WardRound) = viewModelScope.launch { repo.updateRound(round.copy(seen = false)) }
-
-    fun deleteRoundWithUndo(round: WardRound) =
+    fun tidyHandover() =
         viewModelScope.launch {
-            repo.deleteRound(round)
-            undoSnackbar("Round entry deleted") { repo.restoreRound(round) }
-        }
-
-    fun deleteArchivedShiftWithUndo(shift: Shift) =
-        viewModelScope.launch {
-            val snapshot = repo.deleteShiftCascade(shift)
-            if (screen.value is Screen.ArchiveDetail) screen.value = Screen.Home
-            undoSnackbar("Shift deleted") { repo.restoreShiftCascade(snapshot) }
-        }
-
-    /**
-     * 6-second undo window. Compose's SnackbarHost places the snackbar in the
-     * normal composition with real hit-testing (unlike the old web app's
-     * pointer-events bug), so the action is reliably tappable.
-     */
-    private fun undoSnackbar(
-        message: String,
-        restore: suspend () -> Unit,
-    ) {
-        viewModelScope.launch {
-            val showJob =
-                launch {
-                    val result =
-                        snackbarHostState.showSnackbar(
-                            message = message,
-                            actionLabel = "UNDO",
-                            withDismissAction = true,
-                            duration = SnackbarDuration.Indefinite,
-                        )
-                    if (result == SnackbarResult.ActionPerformed) {
-                        restore()
-                        bumpGeneration()
-                    }
-                }
-            launch {
-                kotlinx.coroutines.delay(6000)
-                // Dismiss at exactly 6 s — but never interrupt a restore that
-                // is already running from an UNDO tap.
-                if (showJob.isActive) {
-                    snackbarHostState.currentSnackbarData?.dismiss()
-                }
-            }
-        }
-    }
-
-    fun noteCopied() =
-        viewModelScope.launch {
-            snackbarHostState.showSnackbar(
-                "DHR note copied — paste into the record",
-                duration = SnackbarDuration.Short,
+            if (handoverText.value.isBlank()) return@launch
+            aiState.value = AiState.Running
+            runTidy(handoverText.value).fold(
+                onSuccess = {
+                    handoverText.value = it
+                    batchNeedsReview.value = true
+                    aiState.value = AiState.Done
+                },
+                onFailure = { aiState.value = AiState.Error(it.message ?: "Request failed.") },
             )
         }
-
-    fun bumpGeneration() {
-        dataGeneration.value += 1
-    }
 
     // ---- Archive detail & search ----
 

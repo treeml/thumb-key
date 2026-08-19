@@ -46,7 +46,13 @@ import com.nightshift.tracker.ui.components.ArmedDeleteButton
 import com.nightshift.tracker.ui.components.DbTextField
 import com.nightshift.tracker.ui.components.InkCaptureDialog
 import com.nightshift.tracker.ui.components.InkPreview
+import androidx.compose.foundation.layout.height
 import com.nightshift.tracker.ui.capture.CaptureBar
+import com.nightshift.tracker.ui.design.HandedActions
+import com.nightshift.tracker.ui.design.NsAction
+import com.nightshift.tracker.ui.design.NsCard
+import com.nightshift.tracker.ui.design.Space
+import com.nightshift.tracker.ui.settings.leftHanded
 import com.nightshift.tracker.ui.components.PriorityPicker
 import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.RoutineGreen
@@ -144,84 +150,135 @@ private fun JobCard(
     vm: MainViewModel,
     generation: Int,
 ) {
+    // A filled-in job collapses to a single readable line; a blank one opens
+    // ready to type. Detail is one tap away, never in the way.
+    var expanded by rememberSaveable(job.id) { mutableStateOf(job.text.isBlank() && job.inkJson == null) }
     var showInk by remember { mutableStateOf(false) }
     var showTimerPicker by remember { mutableStateOf(false) }
     val accent = priorityColor(job.priority)
+    val overdue = job.timerEndAt != null && job.timerEndAt <= System.currentTimeMillis()
+    val left = leftHanded()
 
-    Column(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .background(Surface1, RoundedCornerShape(16.dp))
-                .border(1.dp, Outline, RoundedCornerShape(16.dp))
-                .padding(14.dp)
-                .animateContentSize(),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Priority edge marker
-            Box(
-                Modifier
-                    .width(5.dp)
-                    .defaultMinSize(minHeight = 40.dp)
-                    .background(accent, RoundedCornerShape(3.dp)),
-            )
-            DbTextField(
-                value = job.bed,
-                onCommit = { vm.updateJob(job.copy(bed = it)) },
-                label = "Bed",
-                seedKey = "${job.id}-$generation-bed",
-                singleLine = true,
-                modifier = Modifier.width(96.dp),
-            )
-            // Two-state toggle; "done" has its own button and its own drawer.
-            StatusToggle(status = job.status) {
-                vm.updateJob(job.copy(status = (job.status + 1) % 2))
-            }
-        }
-        DbTextField(
-            value = job.text,
-            onCommit = { vm.updateJob(job.copy(text = it)) },
-            label = "Job",
-            seedKey = "${job.id}-$generation-text",
-            modifier = Modifier.fillMaxWidth(),
-        )
-        job.inkJson?.let { ink ->
-            InkPreview(json = ink, modifier = Modifier.clickable { showInk = true })
-        }
-        PriorityPicker(selected = job.priority, onSelect = { vm.updateJob(job.copy(priority = it)) })
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            TimerButton(job = job, onClick = { showTimerPicker = true })
-            Box(
-                Modifier
-                    .defaultMinSize(minHeight = 48.dp)
-                    .background(Surface2, RoundedCornerShape(12.dp))
-                    .clickable { showInk = true }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                contentAlignment = Alignment.Center,
+    NsCard(accent = if (overdue) UrgentRed else null) {
+        Column(Modifier.animateContentSize()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Space.md),
+                modifier = Modifier.fillMaxWidth().padding(Space.md),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Filled.Draw, contentDescription = null, tint = TextSecondary, modifier = Modifier.width(18.dp))
-                    Text("Ink", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                val summary: @Composable () -> Unit = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Space.md),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { expanded = !expanded },
+                    ) {
+                        Box(
+                            Modifier
+                                .width(4.dp)
+                                .height(36.dp)
+                                .background(accent, RoundedCornerShape(2.dp)),
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                job.text.ifBlank { if (job.inkJson != null) "Handwritten note" else "New job" },
+                                style = MaterialTheme.typography.bodyLarge,
+                                maxLines = if (expanded) 4 else 2,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                                if (job.bed.isNotBlank()) {
+                                    Text(
+                                        "Bed ${job.bed}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextSecondary,
+                                    )
+                                }
+                                if (job.status == 1) {
+                                    Text(
+                                        "IN PROGRESS",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                                TimerLabel(job)
+                            }
+                        }
+                    }
+                }
+                val doneButton: @Composable () -> Unit = {
+                    NsAction(
+                        label = "Done",
+                        onClick = { vm.completeJob(job) },
+                        tone = RoutineGreen,
+                        filled = true,
+                    )
+                }
+                if (left) {
+                    doneButton()
+                    Box(Modifier.weight(1f)) { summary() }
+                } else {
+                    Box(Modifier.weight(1f)) { summary() }
+                    doneButton()
                 }
             }
-            Spacer(Modifier.weight(1f))
-            ArmedDeleteButton(onConfirmedDelete = { vm.deleteJobWithUndo(job) })
-            // Done: card slides into the Completed drawer, retrievable there.
-            Box(
-                Modifier
-                    .defaultMinSize(minHeight = 48.dp)
-                    .background(RoutineGreen.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
-                    .border(1.dp, RoutineGreen.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
-                    .clickable { vm.completeJob(job) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("Done ✓", style = MaterialTheme.typography.labelLarge, color = RoutineGreen)
+
+            if (overdue) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                    modifier = Modifier.padding(start = Space.md, end = Space.md, bottom = Space.md),
+                ) {
+                    NsAction("+10 min", { vm.snoozeJob(job, 10) }, tone = UrgentRed)
+                    NsAction("+30 min", { vm.snoozeJob(job, 30) }, tone = UrgentRed)
+                    NsAction("Clear timer", { vm.setJobTimer(job, null) })
+                }
+            }
+
+            if (expanded) {
+                Column(
+                    Modifier.padding(start = Space.md, end = Space.md, bottom = Space.md),
+                    verticalArrangement = Arrangement.spacedBy(Space.md),
+                ) {
+                    DbTextField(
+                        value = job.text,
+                        onCommit = { vm.updateJob(job.copy(text = it)) },
+                        label = "Job",
+                        seedKey = "${job.id}-$generation-text",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        DbTextField(
+                            value = job.bed,
+                            onCommit = { vm.updateJob(job.copy(bed = it)) },
+                            label = "Bed",
+                            seedKey = "${job.id}-$generation-bed",
+                            singleLine = true,
+                            modifier = Modifier.width(110.dp),
+                        )
+                        StatusToggle(status = job.status) {
+                            vm.updateJob(job.copy(status = (job.status + 1) % 2))
+                        }
+                    }
+                    job.inkJson?.let { ink ->
+                        InkPreview(json = ink, modifier = Modifier.clickable { showInk = true })
+                    }
+                    PriorityPicker(selected = job.priority, onSelect = { vm.updateJob(job.copy(priority = it)) })
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        TimerButton(job = job, onClick = { showTimerPicker = true })
+                        NsAction("Ink", { showInk = true }, icon = Icons.Filled.Draw)
+                    }
+                    HandedActions(
+                        secondary = { ArmedDeleteButton(onConfirmedDelete = { vm.deleteJobWithUndo(job) }) },
+                        primary = {
+                            NsAction(
+                                label = "Collapse",
+                                onClick = { expanded = false },
+                                haptic = false,
+                            )
+                        },
+                    )
+                }
             }
         }
     }
@@ -251,6 +308,29 @@ private fun JobCard(
                 vm.setJobTimer(job, System.currentTimeMillis() + minutes * 60_000L)
                 showTimerPicker = false
             },
+        )
+    }
+}
+
+/** Live countdown shown inline on the collapsed card. */
+@Composable
+private fun TimerLabel(job: Job) {
+    val end = job.timerEndAt ?: return
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(end) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    val remaining = end - now
+    if (remaining <= 0) {
+        Text("TIME UP", style = MaterialTheme.typography.labelSmall, color = UrgentRed)
+    } else {
+        Text(
+            "%d:%02d".format(remaining / 60_000, (remaining % 60_000) / 1000),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
         )
     }
 }

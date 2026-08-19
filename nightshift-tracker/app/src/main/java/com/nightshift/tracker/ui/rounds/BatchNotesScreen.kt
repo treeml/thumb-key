@@ -72,7 +72,7 @@ fun BatchNotesScreen(vm: MainViewModel) {
     val text = vm.batchText.collectAsStateValue()
     val aiState = vm.aiState.collectAsStateValue()
     val needsReview = vm.batchNeedsReview.collectAsStateValue()
-    val count = vm.selectedRoundIds.collectAsStateValue().size
+    val subject = vm.batchSubject.collectAsStateValue()
     var showKeyDialog by remember { mutableStateOf(false) }
 
     val running = aiState is AiState.Running
@@ -89,7 +89,7 @@ fun BatchNotesScreen(vm: MainViewModel) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
-                title = { Text("Notes — $count patient${if (count == 1) "" else "s"}") },
+                title = { Text(subject) },
                 actions = {
                     if (AiFactory.AVAILABLE) {
                         IconButton(onClick = { showKeyDialog = true }) {
@@ -168,7 +168,7 @@ fun BatchNotesScreen(vm: MainViewModel) {
                     tint = MaterialTheme.colorScheme.primary,
                     enabled = !running,
                 ) {
-                    if (vm.hasApiKey()) vm.tidySelectedNotes() else showKeyDialog = true
+                    if (vm.hasApiKey()) vm.tidyCurrentNote() else showKeyDialog = true
                 }
                 Text(
                     "Names, MRNs and bed numbers are replaced with placeholders before the " +
@@ -211,11 +211,10 @@ fun BatchNotesScreen(vm: MainViewModel) {
                         enabled = !blocked,
                     ) {
                         val date = SimpleDateFormat("EEE d MMM", Locale.getDefault()).format(Date())
-                        val subject = "Ward round notes — $date ($count patient${if (count == 1) "" else "s"})"
                         val send =
                             Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, subject)
+                                putExtra(Intent.EXTRA_SUBJECT, "$subject — $date")
                                 putExtra(Intent.EXTRA_TEXT, text)
                             }
                         context.startActivity(Intent.createChooser(send, "Email notes"))

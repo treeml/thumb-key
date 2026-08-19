@@ -5,6 +5,9 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nightshift.tracker.ui.settings.AppSettings
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -79,22 +82,27 @@ private val LightColors =
         error = DangerRed,
     )
 
-private val NightTypography =
+/**
+ * One type ramp, optionally scaled up for tired eyes at 4 am (Settings ->
+ * Larger text). Scaling the ramp rather than the density keeps layouts intact.
+ */
+private fun typographyFor(scale: Float) =
     Typography(
-        headlineSmall = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 22.sp, letterSpacing = (-0.3).sp),
-        titleLarge = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 19.sp, letterSpacing = (-0.2).sp),
-        titleMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 16.sp),
-        bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 23.sp),
-        bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp),
-        labelLarge = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 14.sp, letterSpacing = 0.2.sp),
-        labelSmall = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 11.sp, letterSpacing = 0.8.sp),
+        headlineSmall = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 22.sp * scale, letterSpacing = (-0.3).sp),
+        titleLarge = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 19.sp * scale, letterSpacing = (-0.2).sp),
+        titleMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 16.sp * scale),
+        bodyLarge = TextStyle(fontSize = 16.sp * scale, lineHeight = 23.sp * scale),
+        bodyMedium = TextStyle(fontSize = 14.sp * scale, lineHeight = 20.sp * scale),
+        labelLarge = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 14.sp * scale, letterSpacing = 0.2.sp),
+        labelSmall = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 11.sp * scale, letterSpacing = 0.8.sp),
     )
 
 @Composable
 fun NightshiftTheme(content: @Composable () -> Unit) {
+    val large by AppSettings.largeText.collectAsStateWithLifecycle()
     MaterialTheme(
         colorScheme = if (URO) LightColors else DarkColors,
-        typography = NightTypography,
+        typography = typographyFor(if (large) 1.15f else 1f),
         content = content,
     )
 }

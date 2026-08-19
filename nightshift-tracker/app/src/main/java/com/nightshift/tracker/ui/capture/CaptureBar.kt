@@ -30,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.nightshift.tracker.ui.design.rememberTick
+import com.nightshift.tracker.ui.settings.leftHanded
 import com.nightshift.tracker.ui.theme.Ink
 import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.Surface2
@@ -51,8 +53,12 @@ fun CaptureBar(
     var raw by remember { mutableStateOf("") }
     val parsed = remember(raw) { parseCapture(raw) }
 
+    val tick = rememberTick()
+    val left = leftHanded()
+
     fun submit() {
         if (raw.isNotBlank()) {
+            tick()
             onCapture(raw)
             raw = ""
         }
@@ -87,49 +93,57 @@ fun CaptureBar(
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = raw,
-                onValueChange = { raw = it },
-                placeholder = {
-                    Text(
-                        "b12 chase K+ !1 30m",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary,
-                    )
-                },
-                singleLine = true,
-                keyboardOptions =
-                    KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Sentences,
-                        imeAction = ImeAction.Done,
-                    ),
-                keyboardActions = KeyboardActions(onDone = { submit() }),
-                colors =
-                    OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = Outline,
-                    ),
-                modifier = Modifier.weight(1f),
-            )
-            Box(
-                Modifier
-                    .size(52.dp)
-                    .background(
-                        if (raw.isBlank()) Surface2 else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                        RoundedCornerShape(14.dp),
-                    ).border(
-                        1.dp,
-                        if (raw.isBlank()) Outline else MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                        RoundedCornerShape(14.dp),
-                    ).clickable(enabled = raw.isNotBlank()) { submit() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Send,
-                    contentDescription = "Add job",
-                    tint = if (raw.isBlank()) TextSecondary else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
+            val field: @Composable () -> Unit = {
+                OutlinedTextField(
+                    value = raw,
+                    onValueChange = { raw = it },
+                    placeholder = {
+                        Text(
+                            "b12 chase K+ !1 30m",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary,
+                        )
+                    },
+                    singleLine = true,
+                    keyboardOptions =
+                        KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = ImeAction.Done,
+                        ),
+                    keyboardActions = KeyboardActions(onDone = { submit() }),
+                    colors =
+                        OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Outline,
+                        ),
+                    modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            val sendKey: @Composable () -> Unit = {
+                Box(
+                    Modifier
+                        .size(52.dp)
+                        .background(
+                            if (raw.isBlank()) Surface2 else MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                            RoundedCornerShape(14.dp),
+                        ).clickable(enabled = raw.isNotBlank()) { submit() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Add job",
+                        tint = if (raw.isBlank()) TextSecondary else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+            // The send key sits under the thumb: left edge for a left-hander.
+            if (left) {
+                sendKey()
+                Box(Modifier.weight(1f)) { field() }
+            } else {
+                Box(Modifier.weight(1f)) { field() }
+                sendKey()
             }
         }
     }

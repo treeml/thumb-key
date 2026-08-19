@@ -20,7 +20,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -67,16 +69,25 @@ fun HomeScreen(vm: MainViewModel) {
         modifier = Modifier.fillMaxSize(),
     ) {
         item {
-            Column {
-                Text(
-                    if (com.nightshift.tracker.BuildConfig.URO) "UroDay" else "Nightshift",
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                Text(
-                    SimpleDateFormat("EEEE d MMMM", Locale.getDefault()).format(Date()),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (com.nightshift.tracker.BuildConfig.URO) "UroDay" else "Nightshift",
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                    Text(
+                        SimpleDateFormat("EEEE d MMMM", Locale.getDefault()).format(Date()),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary,
+                    )
+                }
+                IconButton(onClick = { vm.screen.value = Screen.Settings }) {
+                    Icon(
+                        Icons.Filled.Settings,
+                        contentDescription = "Settings",
+                        tint = TextSecondary,
+                    )
+                }
             }
         }
 

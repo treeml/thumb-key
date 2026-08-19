@@ -41,6 +41,8 @@ import com.nightshift.tracker.ui.home.HomeScreen
 import com.nightshift.tracker.ui.handover.HandoverScreen
 import com.nightshift.tracker.ui.logbook.LogbookScreen
 import com.nightshift.tracker.ui.rounds.BatchNotesScreen
+import com.nightshift.tracker.ui.settings.AppSettings
+import com.nightshift.tracker.ui.settings.SettingsScreen
 import com.nightshift.tracker.ui.shift.EndShiftScreen
 import com.nightshift.tracker.ui.shift.ShiftScreen
 import com.nightshift.tracker.ui.theme.Ink
@@ -72,7 +74,20 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             NightshiftTheme {
-                AppRoot()
+                val night by AppSettings.nightVision.collectAsStateWithLifecycle()
+                Box(Modifier.fillMaxSize()) {
+                    AppRoot()
+                    if (night) {
+                        // A warm scrim over everything. It has no gesture
+                        // modifiers, so it never intercepts a touch — it only
+                        // takes the blue out of the screen at 4 am.
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(androidx.compose.ui.graphics.Color(0x33FF3B00)),
+                        )
+                    }
+                }
             }
         }
     }
@@ -88,6 +103,7 @@ private fun AppRoot(vm: MainViewModel = viewModel()) {
         Screen.Handover -> HandoverScreen(vm)
         Screen.EndShift -> EndShiftScreen(vm)
         Screen.Logbook -> LogbookScreen(vm)
+        Screen.Settings -> SettingsScreen(vm)
         Screen.ActiveShift -> ShiftScreen(vm)
         Screen.Home -> HomeShell(vm)
     }

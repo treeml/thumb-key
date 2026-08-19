@@ -44,7 +44,9 @@ import com.nightshift.tracker.ui.MainViewModel
 import com.nightshift.tracker.ui.components.ArmedDeleteButton
 import com.nightshift.tracker.ui.components.DbTextField
 import com.nightshift.tracker.ui.components.PriorityPicker
+import com.nightshift.tracker.ui.design.fabAlignment
 import com.nightshift.tracker.ui.jobs.CompletedDrawerHeader
+import com.nightshift.tracker.ui.settings.leftHanded
 import com.nightshift.tracker.ui.jobs.collectAsStateValue
 import com.nightshift.tracker.ui.reviews.copyToClipboard
 import com.nightshift.tracker.ui.theme.CardBody
@@ -158,7 +160,7 @@ fun RoundsTab(
                 onClick = { vm.addRound() },
                 icon = { Icon(Icons.Filled.Add, contentDescription = null) },
                 text = { Text("Add patient") },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp),
+                modifier = Modifier.align(fabAlignment()).padding(20.dp),
             )
         }
     }
@@ -250,10 +252,14 @@ private fun RoundCard(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.fillMaxWidth().padding(end = 14.dp),
         ) {
-            Checkbox(
-                checked = selected,
-                onCheckedChange = { vm.toggleRoundSelected(round.id) },
-            )
+            // Tick box stays on the thumb side so batch-selecting a whole bay
+            // is a one-handed sweep down the list.
+            if (!leftHanded()) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { vm.toggleRoundSelected(round.id) },
+                )
+            }
             Box(Modifier.size(12.dp).background(accent, CircleShape))
             Column(
                 Modifier
@@ -281,6 +287,12 @@ private fun RoundCard(
                 tint = TextSecondary,
                 modifier = Modifier.clickable { expanded = !expanded },
             )
+            if (leftHanded()) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = { vm.toggleRoundSelected(round.id) },
+                )
+            }
         }
 
         if (expanded) {
