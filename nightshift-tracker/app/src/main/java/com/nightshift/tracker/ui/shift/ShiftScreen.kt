@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -20,6 +21,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.nightshift.tracker.BuildConfig
 import com.nightshift.tracker.ui.MainViewModel
@@ -28,6 +33,7 @@ import com.nightshift.tracker.ui.guides.GuidesTab
 import com.nightshift.tracker.ui.guides.UroLearnTab
 import com.nightshift.tracker.ui.jobs.JobsTab
 import com.nightshift.tracker.ui.jobs.collectAsStateValue
+import com.nightshift.tracker.ui.learn.QuestionCaptureDialog
 import com.nightshift.tracker.ui.reviews.ReviewsTab
 import com.nightshift.tracker.ui.rounds.RoundsTab
 import com.nightshift.tracker.ui.theme.Ink
@@ -49,6 +55,7 @@ fun ShiftScreen(vm: MainViewModel) {
     // Held in the ViewModel so other surfaces can jump here (e.g. "+ Job" on a
     // ward round card lands on Jobs with the bed already typed).
     val tab = vm.activeTab.collectAsStateValue().coerceIn(0, tabTitles.lastIndex)
+    var showResearchCapture by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         containerColor = Ink,
@@ -63,6 +70,9 @@ fun ShiftScreen(vm: MainViewModel) {
                 },
                 title = { Text(shift.label) },
                 actions = {
+                    IconButton(onClick = { showResearchCapture = true }) {
+                        Icon(Icons.Filled.BookmarkAdd, contentDescription = "Look up later")
+                    }
                     IconButton(onClick = { vm.openHandover() }) {
                         Icon(Icons.AutoMirrored.Filled.Assignment, contentDescription = "Handover")
                     }
@@ -103,9 +113,19 @@ fun ShiftScreen(vm: MainViewModel) {
                 "Jobs" -> JobsTab(vm, generation)
                 "Rounds" -> RoundsTab(vm, generation)
                 "Reviews" -> ReviewsTab(vm, generation)
-                "Learn" -> UroLearnTab()
-                else -> GuidesTab()
+                "Learn" -> UroLearnTab(vm)
+                else -> GuidesTab(vm)
             }
         }
+    }
+
+    if (showResearchCapture) {
+        QuestionCaptureDialog(
+            onDismiss = { showResearchCapture = false },
+            onSave = {
+                vm.addQuestion(it)
+                showResearchCapture = false
+            },
+        )
     }
 }

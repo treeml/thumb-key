@@ -30,6 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nightshift.tracker.ui.MainViewModel
+import com.nightshift.tracker.ui.learn.ResearchSection
 import com.nightshift.tracker.ui.theme.CardBody
 import com.nightshift.tracker.ui.theme.DangerBody
 import com.nightshift.tracker.ui.theme.DangerRed
@@ -38,12 +40,13 @@ import com.nightshift.tracker.ui.theme.Surface1
 import com.nightshift.tracker.ui.theme.TextSecondary
 
 @Composable
-fun GuidesTab() {
+fun GuidesTab(vm: MainViewModel) {
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
+        item { ResearchSection(vm) }
         item {
             Text(
                 GUIDES_DISCLAIMER,

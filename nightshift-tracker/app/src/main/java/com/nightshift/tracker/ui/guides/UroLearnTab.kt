@@ -32,6 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.nightshift.tracker.ui.MainViewModel
+import com.nightshift.tracker.ui.learn.ResearchSection
 import com.nightshift.tracker.ui.theme.Accent
 import com.nightshift.tracker.ui.theme.CardBody
 import com.nightshift.tracker.ui.theme.DangerBody
@@ -47,7 +49,7 @@ import com.nightshift.tracker.ui.theme.TextSecondary
  * red never-miss section.
  */
 @Composable
-fun UroLearnTab() {
+fun UroLearnTab(vm: MainViewModel) {
     var showDeck by rememberSaveable { mutableStateOf(false) }
     var deck by remember { mutableStateOf(uroFlashcards) }
 
@@ -56,6 +58,7 @@ fun UroLearnTab() {
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
+        item { ResearchSection(vm) }
         item {
             Text(
                 URO_DISCLAIMER,
