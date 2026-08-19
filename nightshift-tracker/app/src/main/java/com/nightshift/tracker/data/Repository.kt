@@ -21,6 +21,8 @@ class Repository(
     val jobDao get() = db.jobDao()
     val reviewDao get() = db.reviewDao()
     val wardRoundDao get() = db.wardRoundDao()
+    val procedureDao get() = db.procedureDao()
+    val learningDao get() = db.learningDao()
 
     private suspend fun <T> commit(block: suspend () -> T): T {
         val result = block()
@@ -145,4 +147,65 @@ class Repository(
     suspend fun deleteRound(round: WardRound) = commit { wardRoundDao.delete(round.id) }
 
     suspend fun restoreRound(round: WardRound) = commit { wardRoundDao.upsert(round) }
+
+    suspend fun updateShift(shift: Shift) = commit { shiftDao.upsert(shift) }
+
+    suspend fun recordBreak(shift: Shift) =
+        commit { shiftDao.upsert(shift.copy(lastBreakAt = System.currentTimeMillis())) }
+
+    // ---- Procedure logbook (survives shift archiving and deletion) ----
+
+    suspend fun logProcedure(
+        name: String,
+        supervision: String,
+        outcome: String,
+        notes: String,
+        shiftId: String?,
+    ): ProcedureLog =
+        commit {
+            val entry =
+                ProcedureLog(
+                    id = UUID.randomUUID().toString(),
+                    name = name,
+                    supervision = supervision,
+                    outcome = outcome,
+                    notes = notes,
+                    shiftId = shiftId,
+                    performedAt = System.currentTimeMillis(),
+                )
+            procedureDao.upsert(entry)
+            entry
+        }
+
+    suspend fun updateProcedure(entry: ProcedureLog) = commit { procedureDao.upsert(entry) }
+
+    suspend fun deleteProcedure(entry: ProcedureLog) = commit { procedureDao.delete(entry.id) }
+
+    suspend fun restoreProcedure(entry: ProcedureLog) = commit { procedureDao.upsert(entry) }
+
+    // ---- Learning questions ----
+
+    suspend fun addLearning(
+        question: String,
+        context: String,
+        shiftId: String?,
+    ): LearningItem =
+        commit {
+            val item =
+                LearningItem(
+                    id = UUID.randomUUID().toString(),
+                    question = question,
+                    context = context,
+                    shiftId = shiftId,
+                    createdAt = System.currentTimeMillis(),
+                )
+            learningDao.upsert(item)
+            item
+        }
+
+    suspend fun updateLearning(item: LearningItem) = commit { learningDao.upsert(item) }
+
+    suspend fun deleteLearning(item: LearningItem) = commit { learningDao.delete(item.id) }
+
+    suspend fun restoreLearning(item: LearningItem) = commit { learningDao.upsert(item) }
 }

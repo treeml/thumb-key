@@ -56,6 +56,8 @@ class BackupManager(
                 jobs = db.jobDao().allOnce(),
                 reviews = db.reviewDao().allOnce(),
                 rounds = db.wardRoundDao().allOnce(),
+                procedures = db.procedureDao().allOnce(),
+                learning = db.learningDao().allOnce(),
             )
         return gson.toJson(payload)
     }
@@ -136,6 +138,12 @@ class BackupManager(
                 @Suppress("USELESS_ELVIS")
                 val rounds: List<WardRound> = payload.rounds ?: emptyList()
 
+                @Suppress("USELESS_ELVIS")
+                val procedures: List<ProcedureLog> = payload.procedures ?: emptyList()
+
+                @Suppress("USELESS_ELVIS")
+                val learning: List<LearningItem> = payload.learning ?: emptyList()
+
                 // Safety net before we touch anything.
                 for (dir in backupDirs()) {
                     atomicWrite(
@@ -146,6 +154,8 @@ class BackupManager(
 
                 db.runInTransaction {
                     // runInTransaction is not suspend-friendly; use raw deletes.
+                    db.openHelper.writableDatabase.execSQL("DELETE FROM learning_items")
+                    db.openHelper.writableDatabase.execSQL("DELETE FROM procedures")
                     db.openHelper.writableDatabase.execSQL("DELETE FROM ward_rounds")
                     db.openHelper.writableDatabase.execSQL("DELETE FROM reviews")
                     db.openHelper.writableDatabase.execSQL("DELETE FROM jobs")
@@ -155,8 +165,11 @@ class BackupManager(
                 jobs.forEach { db.jobDao().upsert(it) }
                 reviews.forEach { db.reviewDao().upsert(it) }
                 rounds.forEach { db.wardRoundDao().upsert(it) }
+                procedures.forEach { db.procedureDao().upsert(it) }
+                learning.forEach { db.learningDao().upsert(it) }
                 scheduleBackup()
-                "Restored ${shifts.size} shifts, ${jobs.size} jobs, ${reviews.size} reviews, ${rounds.size} rounds"
+                "Restored ${shifts.size} shifts, ${jobs.size} jobs, ${reviews.size} reviews, " +
+                    "${rounds.size} rounds, ${procedures.size} procedures, ${learning.size} questions"
             }
         }
 }

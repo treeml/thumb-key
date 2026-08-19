@@ -14,6 +14,10 @@ data class Shift(
     val startedAt: Long,
     val archived: Boolean = false,
     val archivedAt: Long? = null,
+    /** Last time the user tapped "had a break" — drives the wellbeing chip. */
+    val lastBreakAt: Long? = null,
+    /** Free-text "watch out for" carried into the handover. */
+    val handoverNote: String = "",
 )
 
 @Entity(
@@ -56,6 +60,9 @@ data class Review(
     val impression: String = "",
     val plan: String = "",
     val registrarNotified: Boolean = false,
+    // Time-stamped escalation: who, and when. Protects the documentation trail.
+    val escalatedTo: String = "",
+    val escalatedAt: Long? = null,
     // Done = hidden from the active list, parked in the Completed drawer.
     val done: Boolean = false,
     val createdAt: Long,
@@ -87,15 +94,72 @@ data class WardRound(
     val createdAt: Long,
 )
 
+/**
+ * Procedure logbook entry. Deliberately NOT tied to a shift's lifetime —
+ * these accumulate across the whole term for the user's portfolio/CPD.
+ */
+@Entity(tableName = "procedures")
+data class ProcedureLog(
+    @PrimaryKey val id: String,
+    val name: String,
+    val supervision: String = SUPERVISION_LEVELS[3],
+    val outcome: String = OUTCOMES[0],
+    val notes: String = "",
+    val shiftId: String? = null,
+    val performedAt: Long,
+)
+
+val SUPERVISION_LEVELS = listOf("Observed", "Assisted", "Supervised", "Independent", "Taught someone")
+val OUTCOMES = listOf("Success", "Difficult", "Failed", "Complication")
+
+/** Common procedures offered as one-tap chips. Free text is always allowed. */
+val COMMON_PROCEDURES =
+    listOf(
+        "IDC insertion (male)",
+        "IDC insertion (female)",
+        "Bladder washout",
+        "3-way catheter",
+        "Cannula (IV)",
+        "Venepuncture",
+        "ABG / VBG",
+        "Blood cultures",
+        "NG tube",
+        "Catheter removal / TOV",
+        "Suturing",
+        "Wound review / dressing",
+        "Lumbar puncture",
+        "Ascitic tap",
+        "Death certification",
+        "Family discussion",
+    )
+
+/**
+ * A question the user hit on shift and wants to close the loop on later.
+ * Answered items become their own flashcards.
+ */
+@Entity(tableName = "learning_items")
+data class LearningItem(
+    @PrimaryKey val id: String,
+    val question: String,
+    val answer: String = "",
+    val context: String = "",
+    val shiftId: String? = null,
+    val createdAt: Long,
+    val answeredAt: Long? = null,
+    val starred: Boolean = false,
+)
+
 /** Whole-database snapshot used for JSON auto-backup, export and import. */
 data class BackupPayload(
     val app: String = "nightshift-tracker",
-    val schemaVersion: Int = 2,
+    val schemaVersion: Int = 3,
     val exportedAt: Long,
     val shifts: List<Shift>,
     val jobs: List<Job>,
     val reviews: List<Review>,
     val rounds: List<WardRound> = emptyList(),
+    val procedures: List<ProcedureLog> = emptyList(),
+    val learning: List<LearningItem> = emptyList(),
 )
 
 /** Full contents of one shift, used for cascade delete/undo and archive view. */

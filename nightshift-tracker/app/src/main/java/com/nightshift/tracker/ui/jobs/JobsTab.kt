@@ -46,6 +46,7 @@ import com.nightshift.tracker.ui.components.ArmedDeleteButton
 import com.nightshift.tracker.ui.components.DbTextField
 import com.nightshift.tracker.ui.components.InkCaptureDialog
 import com.nightshift.tracker.ui.components.InkPreview
+import com.nightshift.tracker.ui.capture.CaptureBar
 import com.nightshift.tracker.ui.components.PriorityPicker
 import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.RoutineGreen
@@ -64,53 +65,76 @@ fun JobsTab(
     generation: Int,
 ) {
     val jobs = vm.jobs.collectAsStateValue()
-    val active = jobs.filter { it.status != 2 }
+    val now = System.currentTimeMillis()
+    val open = jobs.filter { it.status != 2 }
+
+    // Anything whose timer has blown floats to the top, whatever its priority.
+    // Nothing else re-orders under the user's thumb mid-round.
+    val overdue = open.filter { it.timerEndAt != null && it.timerEndAt <= now }
+    val active = overdue + open.filterNot { it in overdue }
     val completed = jobs.filter { it.status == 2 }
     var showCompleted by rememberSaveable { mutableStateOf(false) }
 
-    Box(Modifier.fillMaxSize()) {
-        LazyColumn(
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.fillMaxSize(),
+    Column(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .weight(1f),
         ) {
-            if (jobs.isEmpty()) {
-                item {
-                    Text(
-                        "No jobs yet. Tap New job when the pager goes off.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(top = 24.dp),
-                    )
+            LazyColumn(
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                if (jobs.isEmpty()) {
+                    item {
+                        Text(
+                            "Nothing on the list.\n\nType or dictate a line below — " +
+                                "\"b12 chase K+ !1 30m\" becomes bed 12, urgent, with a " +
+                                "30-minute alarm.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(top = 24.dp),
+                        )
+                    }
                 }
-            }
-            items(active, key = { it.id }) { job ->
-                JobCard(job = job, vm = vm, generation = generation)
-            }
-            if (completed.isNotEmpty()) {
-                item(key = "completed-drawer") {
-                    CompletedDrawerHeader(
-                        title = "Completed (${completed.size})",
-                        expanded = showCompleted,
-                        onToggle = { showCompleted = !showCompleted },
-                    )
+                items(active, key = { it.id }) { job ->
+                    JobCard(job = job, vm = vm, generation = generation)
                 }
-                if (showCompleted) {
-                    items(completed, key = { "done-${it.id}" }) { job ->
-                        CompletedJobRow(job = job, vm = vm)
+                if (completed.isNotEmpty()) {
+                    item(key = "completed-drawer") {
+                        CompletedDrawerHeader(
+                            title = "Completed (${completed.size})",
+                            expanded = showCompleted,
+                            onToggle = { showCompleted = !showCompleted },
+                        )
+                    }
+                    if (showCompleted) {
+                        items(completed, key = { "done-${it.id}" }) { job ->
+                            CompletedJobRow(job = job, vm = vm)
+                        }
+                    }
+                }
+                item(key = "blank-job") {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 48.dp)
+                            .background(Surface2, RoundedCornerShape(12.dp))
+                            .clickable { vm.addJob() }
+                            .padding(12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "+ Blank job card",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = TextSecondary,
+                        )
                     }
                 }
             }
         }
-        ExtendedFloatingActionButton(
-            onClick = { vm.addJob() },
-            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-            text = { Text("New job") },
-            modifier =
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(20.dp),
-        )
+        CaptureBar(onCapture = { vm.captureJob(it) })
     }
 }
 

@@ -96,3 +96,33 @@ interface ReviewDao {
     @Query("SELECT * FROM reviews")
     suspend fun allOnce(): List<Review>
 }
+
+@Dao
+interface ProcedureDao {
+    @Query("SELECT * FROM procedures ORDER BY performedAt DESC")
+    fun all(): Flow<List<ProcedureLog>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(procedure: ProcedureLog)
+
+    @Query("DELETE FROM procedures WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("SELECT * FROM procedures")
+    suspend fun allOnce(): List<ProcedureLog>
+}
+
+@Dao
+interface LearningDao {
+    @Query("SELECT * FROM learning_items ORDER BY answeredAt IS NOT NULL, createdAt DESC")
+    fun all(): Flow<List<LearningItem>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(item: LearningItem)
+
+    @Query("DELETE FROM learning_items WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("SELECT * FROM learning_items")
+    suspend fun allOnce(): List<LearningItem>
+}

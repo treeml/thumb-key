@@ -92,7 +92,13 @@ fun buildDhrNote(review: Review): String {
         appendLine()
         appendLine("Plan:")
         appendLine(review.plan.trim())
-        if (review.registrarNotified) {
+        if (review.escalatedAt != null) {
+            appendLine()
+            appendLine(
+                "Escalated to ${review.escalatedTo.ifBlank { "registrar" }} at " +
+                    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(review.escalatedAt)) + ".",
+            )
+        } else if (review.registrarNotified) {
             appendLine()
             appendLine("Registrar notified and aware.")
         }
@@ -275,8 +281,10 @@ private fun ReviewCard(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                // Escalation tracking
-                val regColor = if (review.registrarNotified) RoutineGreen else TextSecondary
+                // Escalation tracking — time-stamped, because "did you tell
+                // anyone, and when" is the question that gets asked afterwards.
+                val escalated = review.registrarNotified || review.escalatedAt != null
+                val regColor = if (escalated) RoutineGreen else TextSecondary
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -287,12 +295,24 @@ private fun ReviewCard(
                             .defaultMinSize(minHeight = 48.dp)
                             .background(regColor.copy(alpha = 0.14f), RoundedCornerShape(12.dp))
                             .border(1.dp, regColor.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                            .clickable { vm.updateReview(review.copy(registrarNotified = !review.registrarNotified)) }
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                            .clickable {
+                                if (escalated) {
+                                    vm.clearEscalation(review)
+                                } else {
+                                    vm.recordEscalation(review, review.escalatedTo.ifBlank { "registrar" })
+                                }
+                            }.padding(horizontal = 14.dp, vertical = 12.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            if (review.registrarNotified) "Registrar notified ✓" else "Registrar notified?",
+                            when {
+                                review.escalatedAt != null ->
+                                    "Escalated ✓ " +
+                                        SimpleDateFormat("HH:mm", Locale.getDefault())
+                                            .format(Date(review.escalatedAt))
+                                review.registrarNotified -> "Registrar notified ✓"
+                                else -> "Escalated to?"
+                            },
                             style = MaterialTheme.typography.labelLarge,
                             color = regColor,
                         )
@@ -311,6 +331,17 @@ private fun ReviewCard(
                     ) {
                         Text("Done ✓", style = MaterialTheme.typography.labelLarge, color = RoutineGreen)
                     }
+                }
+
+                if (escalated) {
+                    DbTextField(
+                        value = review.escalatedTo,
+                        onCommit = { vm.updateReview(review.copy(escalatedTo = it)) },
+                        label = "Escalated to (name / role)",
+                        seedKey = "${review.id}-$generation-esc",
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
 
                 // DHR note generator — appears once there's something to write.

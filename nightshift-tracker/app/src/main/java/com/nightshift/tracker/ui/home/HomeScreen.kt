@@ -113,6 +113,14 @@ fun HomeScreen(vm: MainViewModel) {
         }
 
         item {
+            BigButton(
+                title = "Logbook & questions",
+                subtitle = "Procedures you've done · things to look up",
+                accent = false,
+            ) { vm.screen.value = Screen.Logbook }
+        }
+
+        item {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },

@@ -8,8 +8,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [Shift::class, Job::class, Review::class, WardRound::class],
-    version = 3,
+    entities = [
+        Shift::class,
+        Job::class,
+        Review::class,
+        WardRound::class,
+        ProcedureLog::class,
+        LearningItem::class,
+    ],
+    version = 4,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -20,6 +27,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun reviewDao(): ReviewDao
 
     abstract fun wardRoundDao(): WardRoundDao
+
+    abstract fun procedureDao(): ProcedureDao
+
+    abstract fun learningDao(): LearningDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
@@ -51,6 +62,30 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        // v4: break/handover fields, time-stamped escalation, and the two
+        // cross-shift tables (procedure logbook, learning questions).
+        private val MIGRATION_3_4 =
+            object : Migration(3, 4) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE shifts ADD COLUMN lastBreakAt INTEGER")
+                    db.execSQL("ALTER TABLE shifts ADD COLUMN handoverNote TEXT NOT NULL DEFAULT ''")
+                    db.execSQL("ALTER TABLE reviews ADD COLUMN escalatedTo TEXT NOT NULL DEFAULT ''")
+                    db.execSQL("ALTER TABLE reviews ADD COLUMN escalatedAt INTEGER")
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `procedures` (" +
+                            "`id` TEXT NOT NULL, `name` TEXT NOT NULL, `supervision` TEXT NOT NULL, " +
+                            "`outcome` TEXT NOT NULL, `notes` TEXT NOT NULL, `shiftId` TEXT, " +
+                            "`performedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+                    )
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `learning_items` (" +
+                            "`id` TEXT NOT NULL, `question` TEXT NOT NULL, `answer` TEXT NOT NULL, " +
+                            "`context` TEXT NOT NULL, `shiftId` TEXT, `createdAt` INTEGER NOT NULL, " +
+                            "`answeredAt` INTEGER, `starred` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+                    )
+                }
+            }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room
@@ -61,9 +96,8 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     // WAL: atomic, crash-safe commits; readers never block the writer.
                     .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                     // No destructive fallback — an app update must never wipe data.
-                    // Future schema changes get explicit Migration objects here.
                     .build()
                     .also { instance = it }
             }

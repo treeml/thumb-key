@@ -12,10 +12,14 @@ import com.nightshift.tracker.ai.AiFactory
 import com.nightshift.tracker.ai.AiPrefs
 import com.nightshift.tracker.ai.buildDeidentifiedBatch
 import com.nightshift.tracker.data.Job
+import com.nightshift.tracker.data.LearningItem
+import com.nightshift.tracker.data.ProcedureLog
 import com.nightshift.tracker.data.Review
 import com.nightshift.tracker.data.Shift
 import com.nightshift.tracker.data.ShiftSnapshot
 import com.nightshift.tracker.data.WardRound
+import com.nightshift.tracker.ui.capture.parseCapture
+import com.nightshift.tracker.ui.handover.buildHandover
 import com.nightshift.tracker.ui.rounds.buildRoundNote
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +44,15 @@ sealed interface Screen {
 
     /** Review / tidy / email the notes for the selected beds. */
     data object BatchNotes : Screen
+
+    /** Generated written handover for the oncoming team. */
+    data object Handover : Screen
+
+    /** End-of-shift safety net before archiving. */
+    data object EndShift : Screen
+
+    /** Procedure logbook + learning questions; lives across shifts. */
+    data object Logbook : Screen
 }
 
 sealed interface AiState {
@@ -358,5 +371,137 @@ class MainViewModel(
                 result.fold({ it }, { "Import failed: ${it.message}" }),
                 duration = SnackbarDuration.Long,
             )
+        }
+
+    // ---- Quick capture ----
+
+    /**
+     * One line in, structured job out. Commits straight to Room, so the job
+     * exists on disk before the user has finished walking to the next bed.
+     */
+    fun captureJob(raw: String) =
+        viewModelScope.launch {
+            val shift = activeShift.value ?: return@launch
+            val parsed = parseCapture(raw)
+            if (parsed.isEmpty) return@launch
+            val job = repo.addJob(shift.id)
+            val withDetail =
+                job.copy(
+                    text = parsed.text,
+                    bed = parsed.bed,
+                    priority = parsed.priority,
+                )
+            repo.updateJob(withDetail)
+            parsed.timerMinutes?.let { mins ->
+                repo.setJobTimer(withDetail, System.currentTimeMillis() + mins * 60_000L)
+            }
+        }
+
+    // ---- Wellbeing ----
+
+    fun recordBreak() =
+        viewModelScope.launch {
+            activeShift.value?.let {
+                repo.recordBreak(it)
+                snackbarHostState.showSnackbar("Break logged. Good.", duration = SnackbarDuration.Short)
+            }
+        }
+
+    // ---- Handover ----
+
+    val handoverText = MutableStateFlow("")
+
+    fun openHandover() {
+        val shift = activeShift.value ?: return
+        handoverText.value = buildHandover(shift, jobs.value, reviews.value, rounds.value)
+        screen.value = Screen.Handover
+    }
+
+    fun editHandoverText(text: String) {
+        handoverText.value = text
+    }
+
+    fun regenerateHandover() {
+        val shift = activeShift.value ?: return
+        handoverText.value = buildHandover(shift, jobs.value, reviews.value, rounds.value)
+    }
+
+    fun setHandoverNote(note: String) =
+        viewModelScope.launch {
+            activeShift.value?.let { repo.updateShift(it.copy(handoverNote = note)) }
+        }
+
+    fun openEndShift() {
+        screen.value = Screen.EndShift
+    }
+
+    // ---- Escalation (time-stamped, for the documentation trail) ----
+
+    fun recordEscalation(review: Review, to: String) =
+        viewModelScope.launch {
+            repo.updateReview(
+                review.copy(
+                    escalatedTo = to,
+                    escalatedAt = System.currentTimeMillis(),
+                    registrarNotified = true,
+                ),
+            )
+        }
+
+    fun clearEscalation(review: Review) =
+        viewModelScope.launch {
+            repo.updateReview(review.copy(escalatedTo = "", escalatedAt = null, registrarNotified = false))
+        }
+
+    // ---- Procedure logbook ----
+
+    val procedures: StateFlow<List<ProcedureLog>> =
+        repo.procedureDao.all().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun logProcedure(
+        name: String,
+        supervision: String,
+        outcome: String,
+        notes: String,
+    ) = viewModelScope.launch {
+        repo.logProcedure(name, supervision, outcome, notes, activeShift.value?.id)
+        snackbarHostState.showSnackbar("Logged: $name", duration = SnackbarDuration.Short)
+    }
+
+    fun deleteProcedureWithUndo(entry: ProcedureLog) =
+        viewModelScope.launch {
+            repo.deleteProcedure(entry)
+            undoSnackbar("Logbook entry deleted") { repo.restoreProcedure(entry) }
+        }
+
+    // ---- Learning questions ----
+
+    val learning: StateFlow<List<LearningItem>> =
+        repo.learningDao.all().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun addQuestion(question: String, context: String = "") =
+        viewModelScope.launch {
+            if (question.isBlank()) return@launch
+            repo.addLearning(question.trim(), context, activeShift.value?.id)
+            snackbarHostState.showSnackbar("Saved to look up later", duration = SnackbarDuration.Short)
+        }
+
+    fun answerQuestion(item: LearningItem, answer: String) =
+        viewModelScope.launch {
+            repo.updateLearning(
+                item.copy(
+                    answer = answer,
+                    answeredAt = if (answer.isBlank()) null else (item.answeredAt ?: System.currentTimeMillis()),
+                ),
+            )
+        }
+
+    fun toggleQuestionStar(item: LearningItem) =
+        viewModelScope.launch { repo.updateLearning(item.copy(starred = !item.starred)) }
+
+    fun deleteQuestionWithUndo(item: LearningItem) =
+        viewModelScope.launch {
+            repo.deleteLearning(item)
+            undoSnackbar("Question deleted") { repo.restoreLearning(item) }
         }
 }
