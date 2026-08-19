@@ -99,6 +99,17 @@ fun JobsTab(
     val context = LocalContext.current
     val byBed by AppSettings.groupJobsByBed.collectAsStateWithLifecycle()
     val seed = vm.captureSeed.collectAsStateValue()
+    val lockedBed = vm.lockedBed.collectAsStateValue()
+    val rounds = vm.rounds.collectAsStateValue()
+
+    // Beds already in play this shift — from the round list and existing jobs —
+    // so pinning one after a paper round is a tap, not typing.
+    val knownBeds =
+        (rounds.map { it.bed } + jobs.map { it.bed })
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sortedWith(compareBy({ bedRank(it).first }, { bedRank(it).second }))
     val now = System.currentTimeMillis()
 
     val open = jobs.filter { it.status != 2 }
@@ -108,7 +119,11 @@ fun JobsTab(
     // Urgency view: anything whose timer has blown floats to the top, whatever
     // its priority. Nothing else re-orders under the user's thumb mid-round.
     val flat = jobOrder(open, now)
-    val beds = open.groupBy { it.bed.trim() }.toList().sortedBy { bedRank(it.first) }
+    val beds =
+        open
+            .groupBy { it.bed.trim() }
+            .toList()
+            .sortedWith(compareBy({ bedRank(it.first).first }, { bedRank(it.first).second }))
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -200,6 +215,9 @@ fun JobsTab(
             onCapture = { vm.captureJob(it) },
             seed = seed,
             onSeedConsumed = { vm.clearCaptureSeed() },
+            lockedBed = lockedBed,
+            onBedChange = { vm.setLockedBed(it) },
+            knownBeds = knownBeds,
         )
     }
 }

@@ -372,8 +372,21 @@ class MainViewModel(
         activeTab.value = index
     }
 
-    /** Text pushed into the capture bar, e.g. a bed prefix from elsewhere. */
+    /** Text pushed into the capture bar; "" simply focuses it. */
     val captureSeed = MutableStateFlow<String?>(null)
+
+    /**
+     * The bed the capture bar is currently pinned to.
+     *
+     * Written up after a paper round, jobs arrive in clumps: three for bed 12,
+     * two for bed 14. Pinning the bed once means the rest is just the words —
+     * a line that names its own bed still wins.
+     */
+    val lockedBed = MutableStateFlow("")
+
+    fun setLockedBed(bed: String) {
+        lockedBed.value = bed.trim()
+    }
 
     fun clearCaptureSeed() {
         captureSeed.value = null
@@ -384,29 +397,38 @@ class MainViewModel(
      * already typed and drops the user on the Jobs tab with the caret ready.
      */
     fun startJobForBed(bed: String) {
-        captureSeed.value = if (bed.isBlank()) "" else "b${bed.trim()} "
+        lockedBed.value = bed.trim()
         activeTab.value = 0
+        captureSeed.value = ""
     }
 
     /**
-     * One line in, structured job out. Commits straight to Room, so the job
-     * exists on disk before the user has finished walking to the next bed.
+     * One line in, structured job out — or several, since writing up a round
+     * comes in clumps. Newlines and semicolons split into separate jobs, so
+     * "chase bloods; order CT; call family" is three jobs, not one.
+     *
+     * Each job commits to Room as it is created, so they exist on disk before
+     * the next line is typed.
      */
     fun captureJob(raw: String) =
         viewModelScope.launch {
             val shift = activeShift.value ?: return@launch
-            val parsed = parseCapture(raw)
-            if (parsed.isEmpty) return@launch
-            val job = repo.addJob(shift.id)
-            val withDetail =
-                job.copy(
-                    text = parsed.text,
-                    bed = parsed.bed,
-                    priority = parsed.priority,
-                )
-            repo.updateJob(withDetail)
-            parsed.timerMinutes?.let { mins ->
-                repo.setJobTimer(withDetail, System.currentTimeMillis() + mins * 60_000L)
+            val lines = raw.split('\n', ';').map { it.trim() }.filter { it.isNotBlank() }
+            for (line in lines) {
+                val parsed = parseCapture(line)
+                if (parsed.isEmpty) continue
+                val job = repo.addJob(shift.id)
+                val withDetail =
+                    job.copy(
+                        text = parsed.text,
+                        // An explicit bed in the line beats the pinned one.
+                        bed = parsed.bed.ifBlank { lockedBed.value },
+                        priority = parsed.priority,
+                    )
+                repo.updateJob(withDetail)
+                parsed.timerMinutes?.let { mins ->
+                    repo.setJobTimer(withDetail, System.currentTimeMillis() + mins * 60_000L)
+                }
             }
         }
 
