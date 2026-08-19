@@ -1,7 +1,9 @@
 package com.nightshift.tracker.ui.shift
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -73,7 +75,17 @@ fun ShiftScreen(vm: MainViewModel) {
             )
         },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                // Edge-to-edge means the keyboard is an inset, not a resize:
+                // without this the capture bar hides behind it. Consuming the
+                // scaffold insets first stops the nav bar being counted twice,
+                // so the bar sits flush on the keyboard.
+                .consumeWindowInsets(padding)
+                .imePadding(),
+        ) {
             PulseStrip(
                 shift = shift,
                 jobs = jobs,
