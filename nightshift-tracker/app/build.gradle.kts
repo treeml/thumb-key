@@ -20,22 +20,24 @@ android {
 
     // Two apps from one codebase. They install side by side and share nothing
     // on-device (separate applicationIds, separate databases and backups).
+    //
+    // NOTE: no room.schemaLocation here. KSP arguments are global, not
+    // per-flavor, so both flavors' KSP tasks resolved to the same schema file
+    // and raced each other writing it ("Empty schema file", intermittently).
+    // Schema export is off instead (see @Database) — every migration in this
+    // project is hand-written and nothing consumes the exported JSON.
     flavorDimensions += "app"
     productFlavors {
-        // Per-flavor Room schema dirs: both flavors' KSP tasks run in one CI
-        // invocation, and a shared schema file is a write/read race.
         create("nightshift") {
             dimension = "app"
             resValue("string", "app_name", "Nightshift")
             buildConfigField("boolean", "URO", "false")
-            ksp { arg("room.schemaLocation", "$projectDir/schemas/nightshift") }
         }
         create("uroday") {
             dimension = "app"
             applicationIdSuffix = ".uro"
             resValue("string", "app_name", "UroDay")
             buildConfigField("boolean", "URO", "true")
-            ksp { arg("room.schemaLocation", "$projectDir/schemas/uroday") }
         }
     }
 

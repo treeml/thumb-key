@@ -17,7 +17,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LearningItem::class,
     ],
     version = 4,
-    exportSchema = true,
+    // Off deliberately: KSP args are global rather than per-flavor, so two
+    // flavors exporting schemas in one build race on the same file. Room still
+    // validates the hand-written migrations against the entities at runtime.
+    exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun shiftDao(): ShiftDao
