@@ -364,6 +364,30 @@ class MainViewModel(
 
     // ---- Quick capture ----
 
+    /** Which tab the shift screen is showing (0 = Jobs). Held here so other
+     *  surfaces — a ward round card, say — can send the user to it. */
+    val activeTab = MutableStateFlow(0)
+
+    fun selectTab(index: Int) {
+        activeTab.value = index
+    }
+
+    /** Text pushed into the capture bar, e.g. a bed prefix from elsewhere. */
+    val captureSeed = MutableStateFlow<String?>(null)
+
+    fun clearCaptureSeed() {
+        captureSeed.value = null
+    }
+
+    /**
+     * "New job for this bed" from anywhere: seeds the capture bar with the bed
+     * already typed and drops the user on the Jobs tab with the caret ready.
+     */
+    fun startJobForBed(bed: String) {
+        captureSeed.value = if (bed.isBlank()) "" else "b${bed.trim()} "
+        activeTab.value = 0
+    }
+
     /**
      * One line in, structured job out. Commits straight to Room, so the job
      * exists on disk before the user has finished walking to the next bed.

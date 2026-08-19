@@ -21,12 +21,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -49,8 +52,22 @@ import com.nightshift.tracker.ui.theme.priorityColor
 fun CaptureBar(
     onCapture: (String) -> Unit,
     modifier: Modifier = Modifier,
+    seed: String? = null,
+    onSeedConsumed: () -> Unit = {},
 ) {
     var raw by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+
+    // A bed heading (or a ward round card) can pre-type the bed prefix and drop
+    // the caret straight after it, so adding a job for the patient in front of
+    // you is one tap plus the words.
+    LaunchedEffect(seed) {
+        if (seed != null) {
+            raw = seed
+            onSeedConsumed()
+            runCatching { focusRequester.requestFocus() }
+        }
+    }
     val parsed = remember(raw) { parseCapture(raw) }
 
     val tick = rememberTick()
@@ -116,7 +133,7 @@ fun CaptureBar(
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
                             unfocusedBorderColor = Outline,
                         ),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 )
             }
             val sendKey: @Composable () -> Unit = {

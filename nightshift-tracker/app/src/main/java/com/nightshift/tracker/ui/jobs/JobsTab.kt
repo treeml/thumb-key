@@ -39,6 +39,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.unit.dp
 import com.nightshift.tracker.data.Job
 import com.nightshift.tracker.ui.MainViewModel
@@ -51,7 +53,9 @@ import com.nightshift.tracker.ui.capture.CaptureBar
 import com.nightshift.tracker.ui.design.HandedActions
 import com.nightshift.tracker.ui.design.NsAction
 import com.nightshift.tracker.ui.design.NsCard
+import com.nightshift.tracker.ui.design.NsChip
 import com.nightshift.tracker.ui.design.Space
+import com.nightshift.tracker.ui.settings.AppSettings
 import com.nightshift.tracker.ui.settings.leftHanded
 import com.nightshift.tracker.ui.components.PriorityPicker
 import com.nightshift.tracker.ui.theme.Outline
@@ -65,30 +69,64 @@ import kotlinx.coroutines.delay
 
 private val statusLabels = listOf("Not started", "In progress", "Done")
 
+/**
+ * Beds sort naturally: 2 before 10, letters after numbers, unbedded last.
+ * A plain string sort puts bed 10 before bed 2, which is exactly the kind of
+ * small wrongness that makes a list feel untrustworthy on a round.
+ */
+private fun bedRank(bed: String): Pair<Int, String> {
+    val trimmed = bed.trim()
+    if (trimmed.isEmpty()) return Int.MAX_VALUE to ""
+    val leadingNumber = trimmed.takeWhile { it.isDigit() }.toIntOrNull()
+    return (leadingNumber ?: (Int.MAX_VALUE - 1)) to trimmed.lowercase()
+}
+
+private fun jobOrder(jobs: List<Job>, now: Long): List<Job> =
+    jobs.sortedWith(
+        compareBy(
+            { if (it.timerEndAt != null && it.timerEndAt <= now) 0 else 1 },
+            { it.priority },
+            { it.createdAt },
+        ),
+    )
+
 @Composable
 fun JobsTab(
     vm: MainViewModel,
     generation: Int,
 ) {
     val jobs = vm.jobs.collectAsStateValue()
+    val context = LocalContext.current
+    val byBed by AppSettings.groupJobsByBed.collectAsStateWithLifecycle()
+    val seed = vm.captureSeed.collectAsStateValue()
     val now = System.currentTimeMillis()
-    val open = jobs.filter { it.status != 2 }
 
-    // Anything whose timer has blown floats to the top, whatever its priority.
-    // Nothing else re-orders under the user's thumb mid-round.
-    val overdue = open.filter { it.timerEndAt != null && it.timerEndAt <= now }
-    val active = overdue + open.filterNot { it in overdue }
+    val open = jobs.filter { it.status != 2 }
     val completed = jobs.filter { it.status == 2 }
     var showCompleted by rememberSaveable { mutableStateOf(false) }
 
+    // Urgency view: anything whose timer has blown floats to the top, whatever
+    // its priority. Nothing else re-orders under the user's thumb mid-round.
+    val flat = jobOrder(open, now)
+    val beds = open.groupBy { it.bed.trim() }.toList().sortedBy { bedRank(it.first) }
+
     Column(Modifier.fillMaxSize()) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Space.sm),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        ) {
+            Text("Order", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+            SortPill("Urgency", !byBed) { AppSettings.setGroupJobsByBed(context, false) }
+            SortPill("By bed", byBed) { AppSettings.setGroupJobsByBed(context, true) }
+        }
         Box(
             Modifier
                 .fillMaxWidth()
                 .weight(1f),
         ) {
             LazyColumn(
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -104,9 +142,27 @@ fun JobsTab(
                         )
                     }
                 }
-                items(active, key = { it.id }) { job ->
-                    JobCard(job = job, vm = vm, generation = generation)
+
+                if (byBed) {
+                    beds.forEach { (bed, bedJobs) ->
+                        item(key = "bed-$bed") {
+                            BedHeader(
+                                bed = bed,
+                                jobs = bedJobs,
+                                now = now,
+                                onAdd = { vm.startJobForBed(bed) },
+                            )
+                        }
+                        items(jobOrder(bedJobs, now), key = { it.id }) { job ->
+                            JobCard(job = job, vm = vm, generation = generation)
+                        }
+                    }
+                } else {
+                    items(flat, key = { it.id }) { job ->
+                        JobCard(job = job, vm = vm, generation = generation)
+                    }
                 }
+
                 if (completed.isNotEmpty()) {
                     item(key = "completed-drawer") {
                         CompletedDrawerHeader(
@@ -140,7 +196,64 @@ fun JobsTab(
                 }
             }
         }
-        CaptureBar(onCapture = { vm.captureJob(it) })
+        CaptureBar(
+            onCapture = { vm.captureJob(it) },
+            seed = seed,
+            onSeedConsumed = { vm.clearCaptureSeed() },
+        )
+    }
+}
+
+@Composable
+private fun SortPill(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Surface2,
+                RoundedCornerShape(10.dp),
+            ).clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) MaterialTheme.colorScheme.primary else TextSecondary,
+        )
+    }
+}
+
+/** Heading for one bed's jobs, with a shortcut to add another for that bed. */
+@Composable
+private fun BedHeader(
+    bed: String,
+    jobs: List<Job>,
+    now: Long,
+    onAdd: () -> Unit,
+) {
+    val overdue = jobs.count { it.timerEndAt != null && it.timerEndAt <= now }
+    val urgent = jobs.count { it.priority == 1 }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+    ) {
+        Text(
+            if (bed.isBlank()) "No bed" else "Bed $bed",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            "${jobs.size}",
+            style = MaterialTheme.typography.labelSmall,
+            color = TextSecondary,
+        )
+        if (overdue > 0) NsChip("$overdue overdue", UrgentRed, strong = true)
+        if (urgent > 0 && overdue == 0) NsChip("$urgent urgent", UrgentRed)
+        Box(Modifier.weight(1f))
+        NsAction("+ Job", onAdd, haptic = false)
     }
 }
 

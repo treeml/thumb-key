@@ -44,6 +44,7 @@ import com.nightshift.tracker.ui.MainViewModel
 import com.nightshift.tracker.ui.components.ArmedDeleteButton
 import com.nightshift.tracker.ui.components.DbTextField
 import com.nightshift.tracker.ui.components.PriorityPicker
+import com.nightshift.tracker.ui.design.NsAction
 import com.nightshift.tracker.ui.design.fabAlignment
 import com.nightshift.tracker.ui.jobs.CompletedDrawerHeader
 import com.nightshift.tracker.ui.settings.leftHanded
@@ -374,6 +375,7 @@ private fun RoundCard(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     ArmedDeleteButton(onConfirmedDelete = { vm.deleteRoundWithUndo(round) })
+                    NsAction("+ Job", { vm.startJobForBed(round.bed) })
                     Spacer(Modifier.weight(1f))
                     Box(
                         Modifier

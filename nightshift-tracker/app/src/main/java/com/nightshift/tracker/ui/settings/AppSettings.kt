@@ -16,11 +16,15 @@ object AppSettings {
     private const val KEY_TEXT = "large_text"
     private const val KEY_NIGHT = "night_vision"
     private const val KEY_HAPTIC = "haptics"
+    private const val KEY_GROUP_BED = "group_jobs_by_bed"
 
     val leftHanded = MutableStateFlow(false)
     val largeText = MutableStateFlow(false)
     val nightVision = MutableStateFlow(false)
     val haptics = MutableStateFlow(true)
+
+    /** Jobs tab: group under bed headings instead of a flat urgency list. */
+    val groupJobsByBed = MutableStateFlow(false)
 
     fun load(context: Context) {
         val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -28,6 +32,7 @@ object AppSettings {
         largeText.value = p.getBoolean(KEY_TEXT, false)
         nightVision.value = p.getBoolean(KEY_NIGHT, false)
         haptics.value = p.getBoolean(KEY_HAPTIC, true)
+        groupJobsByBed.value = p.getBoolean(KEY_GROUP_BED, false)
     }
 
     private fun put(context: Context, key: String, value: Boolean) {
@@ -52,6 +57,11 @@ object AppSettings {
     fun setHaptics(context: Context, value: Boolean) {
         haptics.value = value
         put(context, KEY_HAPTIC, value)
+    }
+
+    fun setGroupJobsByBed(context: Context, value: Boolean) {
+        groupJobsByBed.value = value
+        put(context, KEY_GROUP_BED, value)
     }
 }
 

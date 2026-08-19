@@ -20,10 +20,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.nightshift.tracker.BuildConfig
 import com.nightshift.tracker.ui.MainViewModel
@@ -50,7 +46,9 @@ fun ShiftScreen(vm: MainViewModel) {
     val generation = vm.dataGeneration.collectAsStateValue()
     val jobs = vm.jobs.collectAsStateValue()
     val reviews = vm.reviews.collectAsStateValue()
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    // Held in the ViewModel so other surfaces can jump here (e.g. "+ Job" on a
+    // ward round card lands on Jobs with the bed already typed).
+    val tab = vm.activeTab.collectAsStateValue().coerceIn(0, tabTitles.lastIndex)
 
     Scaffold(
         containerColor = Ink,
@@ -96,7 +94,7 @@ fun ShiftScreen(vm: MainViewModel) {
                 tabTitles.forEachIndexed { index, title ->
                     Tab(
                         selected = tab == index,
-                        onClick = { tab = index },
+                        onClick = { vm.selectTab(index) },
                         text = { Text(title) },
                     )
                 }
