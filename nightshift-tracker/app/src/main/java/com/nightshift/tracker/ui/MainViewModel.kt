@@ -493,4 +493,76 @@ class MainViewModel(
             repo.deleteLearning(item)
             undoSnackbar("Question deleted") { repo.restoreLearning(item) }
         }
+
+    fun deleteArchivedShiftWithUndo(shift: Shift) =
+        viewModelScope.launch {
+            val snapshot = repo.deleteShiftCascade(shift)
+            if (screen.value is Screen.ArchiveDetail) screen.value = Screen.Home
+            undoSnackbar("Shift deleted") { repo.restoreShiftCascade(snapshot) }
+        }
+
+    // ---- Ward rounds ----
+
+    fun addRound() = viewModelScope.launch { activeShift.value?.let { repo.addRound(it.id) } }
+
+    fun updateRound(round: WardRound) = viewModelScope.launch { repo.updateRound(round) }
+
+    fun markRoundSeen(round: WardRound) = viewModelScope.launch { repo.updateRound(round.copy(seen = true)) }
+
+    fun reopenRound(round: WardRound) = viewModelScope.launch { repo.updateRound(round.copy(seen = false)) }
+
+    fun deleteRoundWithUndo(round: WardRound) =
+        viewModelScope.launch {
+            repo.deleteRound(round)
+            undoSnackbar("Round entry deleted") { repo.restoreRound(round) }
+        }
+
+    // ---- Shared feedback ----
+
+    fun noteCopied() =
+        viewModelScope.launch {
+            snackbarHostState.showSnackbar(
+                "Note copied — paste into the record",
+                duration = SnackbarDuration.Short,
+            )
+        }
+
+    fun bumpGeneration() {
+        dataGeneration.value += 1
+    }
+
+    /**
+     * 6-second undo window. Compose's SnackbarHost places the snackbar in the
+     * normal composition with real hit-testing, so the action is reliably
+     * tappable — the bug that made undo useless in the old web app.
+     */
+    private fun undoSnackbar(
+        message: String,
+        restore: suspend () -> Unit,
+    ) {
+        viewModelScope.launch {
+            val showJob =
+                launch {
+                    val result =
+                        snackbarHostState.showSnackbar(
+                            message = message,
+                            actionLabel = "UNDO",
+                            withDismissAction = true,
+                            duration = SnackbarDuration.Indefinite,
+                        )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        restore()
+                        bumpGeneration()
+                    }
+                }
+            launch {
+                kotlinx.coroutines.delay(6000)
+                // Dismiss at exactly 6 s — but never interrupt a restore that
+                // is already running from an UNDO tap.
+                if (showJob.isActive) {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                }
+            }
+        }
+    }
 }
