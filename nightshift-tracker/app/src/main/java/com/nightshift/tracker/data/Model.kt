@@ -55,7 +55,14 @@ data class Job(
     // Absolute epoch-millis deadline; null = no timer. Stored, not in-memory,
     // so timers survive process death and are re-armed after reboot.
     val timerEndAt: Long? = null,
-    // S Pen ink, serialized as JSON [[{x,y},...],...]; null = typed-only job.
+    /**
+     * Retired: handwriting capture was removed in 3.2.1 — it went unused.
+     *
+     * The column stays. Dropping one in SQLite before 3.35 (which minSdk 26
+     * predates) means rebuilding the whole jobs table, and risking every job
+     * on the device to delete a field nobody reads is a bad trade. Any ink
+     * already captured also survives in the backups this way.
+     */
     val inkJson: String? = null,
 )
 

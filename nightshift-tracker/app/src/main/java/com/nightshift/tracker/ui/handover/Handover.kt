@@ -50,7 +50,7 @@ fun buildHandover(
         } else {
             outstanding.forEach { job ->
                 val bed = if (job.bed.isNotBlank()) "Bed ${job.bed} — " else ""
-                val body = job.text.ifBlank { "(handwritten note on device)" }
+                val body = job.text.ifBlank { "(no text)" }
                 val timer =
                     job.timerEndAt?.let { end ->
                         if (end <= now) {

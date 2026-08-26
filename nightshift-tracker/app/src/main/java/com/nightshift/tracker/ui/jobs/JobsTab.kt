@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.foundation.text.KeyboardActions
@@ -52,9 +51,7 @@ import com.nightshift.tracker.data.Job
 import com.nightshift.tracker.ui.MainViewModel
 import com.nightshift.tracker.ui.components.ArmedDeleteButton
 import com.nightshift.tracker.ui.components.DbTextField
-import com.nightshift.tracker.ui.components.InkCaptureDialog
 import com.nightshift.tracker.ui.components.DueTimeDialog
-import com.nightshift.tracker.ui.components.InkPreview
 import androidx.compose.foundation.layout.height
 import com.nightshift.tracker.ui.capture.CaptureBar
 import com.nightshift.tracker.ui.design.HandedActions
@@ -440,8 +437,7 @@ private fun JobCard(
 ) {
     // A filled-in job collapses to a single readable line; a blank one opens
     // ready to type. Detail is one tap away, never in the way.
-    var expanded by rememberSaveable(job.id) { mutableStateOf(job.text.isBlank() && job.inkJson == null) }
-    var showInk by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable(job.id) { mutableStateOf(job.text.isBlank()) }
     var showDuePicker by remember { mutableStateOf(false) }
     val tick = rememberTick()
 
@@ -504,7 +500,7 @@ private fun JobCard(
                     )
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.xs)) {
                         Text(
-                            job.text.ifBlank { if (job.inkJson != null) "Handwritten note" else "New job" },
+                            job.text.ifBlank { "New job" },
                             style = MaterialTheme.typography.bodyLarge,
                             maxLines = if (expanded) 4 else 2,
                         )
@@ -574,20 +570,14 @@ private fun JobCard(
                                 vm.updateJob(job.copy(status = (job.status + 1) % 2))
                             }
                         }
-                        job.inkJson?.let { ink ->
-                            InkPreview(json = ink, modifier = Modifier.clickable { showInk = true })
-                        }
                         PriorityPicker(selected = job.priority, onSelect = { vm.updateJob(job.copy(priority = it)) })
-                        Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                            NsAction(
-                                label = if (due == null) "Set time" else dueText(due, now),
-                                onClick = { showDuePicker = true },
-                                icon = Icons.Filled.Alarm,
-                                tone = if (due == null) null else urgency,
-                                filled = due != null,
-                            )
-                            NsAction("Ink", { showInk = true }, icon = Icons.Filled.Draw)
-                        }
+                        NsAction(
+                            label = if (due == null) "Set time" else dueText(due, now),
+                            onClick = { showDuePicker = true },
+                            icon = Icons.Filled.Alarm,
+                            tone = if (due == null) null else urgency,
+                            filled = due != null,
+                        )
                         HandedActions(
                             secondary = { ArmedDeleteButton(onConfirmedDelete = { vm.deleteJobWithUndo(job) }) },
                             primary = {
@@ -605,16 +595,6 @@ private fun JobCard(
         }
     }
 
-    if (showInk) {
-        InkCaptureDialog(
-            initialJson = job.inkJson,
-            onDismiss = { showInk = false },
-            onSave = {
-                vm.updateJob(job.copy(inkJson = it))
-                showInk = false
-            },
-        )
-    }
     if (showDuePicker) {
         DueTimeDialog(
             title = "When is this due?",
@@ -716,7 +696,7 @@ private fun CompletedJobRow(
         Text("✓", style = MaterialTheme.typography.titleMedium, color = RoutineGreen)
         Text(
             (if (job.bed.isNotBlank()) "Bed ${job.bed} — " else "") +
-                job.text.ifBlank { "(handwritten note)" },
+                job.text.ifBlank { "(no text)" },
             style = MaterialTheme.typography.bodyMedium,
             color = TextSecondary,
             maxLines = 2,

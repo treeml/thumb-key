@@ -174,7 +174,7 @@ private fun ArchivedJobCard(job: Job) {
         Box(Modifier.size(12.dp).background(accent, CircleShape))
         Column(Modifier.weight(1f)) {
             Text(
-                (if (job.bed.isNotBlank()) "Bed ${job.bed} — " else "") + job.text.ifBlank { "(handwritten / empty)" },
+                (if (job.bed.isNotBlank()) "Bed ${job.bed} — " else "") + job.text.ifBlank { "(no text)" },
                 style = MaterialTheme.typography.bodyLarge,
             )
         }
