@@ -480,6 +480,10 @@ private fun JobCard(
     SwipeToDismissBox(
         state = dismiss,
         backgroundContent = { SwipeBackdrop(dismiss.dismissDirection, job.priority) },
+        // An open card is a form being typed into; a stray sideways drag there
+        // must not finish the job.
+        enableDismissFromStartToEnd = !expanded,
+        enableDismissFromEndToStart = !expanded,
     ) {
         NsCard(accent = urgency, tint = if (due != null) urgency else null) {
             Column(Modifier.animateContentSize()) {
@@ -636,7 +640,7 @@ private fun JobCard(
 /** What sits behind a card mid-swipe, so the gesture says what it will do. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SwipeBackdrop(
+fun SwipeBackdrop(
     direction: SwipeToDismissBoxValue,
     priority: Int,
 ) {

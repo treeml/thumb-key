@@ -16,7 +16,7 @@ import java.util.Date
 import kotlinx.coroutines.delay
 import java.util.Locale
 
-/**
+/*
  * How close a deadline is, expressed as one colour.
  *
  * A job with a time on it stops being "priority 2" and starts being "due in
