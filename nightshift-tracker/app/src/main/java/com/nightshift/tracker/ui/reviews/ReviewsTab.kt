@@ -22,11 +22,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -35,6 +39,7 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -45,6 +50,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.nightshift.tracker.data.Review
 import com.nightshift.tracker.ui.MainViewModel
@@ -52,8 +59,6 @@ import com.nightshift.tracker.ui.components.ArmedDeleteButton
 import com.nightshift.tracker.ui.components.DbTextField
 import com.nightshift.tracker.ui.components.DueTimeDialog
 import com.nightshift.tracker.ui.components.PriorityPicker
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import com.nightshift.tracker.ai.AiFactory
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.runtime.LaunchedEffect
@@ -149,7 +154,7 @@ fun ReviewsTab(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            item(key = "templates") { TemplateRow(vm) }
+            item(key = "template-search") { TemplateSearch(vm) }
             if (reviews.isEmpty()) {
                 item {
                     Text(
@@ -188,24 +193,144 @@ fun ReviewsTab(
 }
 
 /**
- * The calls that come in over and over, one tap from a started review. A
- * template fills the reason, a starting priority and a workup PROMPT — never
- * a finding.
+ * Type the problem, pick the closest match.
+ *
+ * This replaced a sideways-scrolling strip of chips. Scrolling to find a card
+ * is fine with six templates and useless with thirty, and the list only grows;
+ * typing four letters does not care how long it is. Matching forgives
+ * abbreviations, synonyms and typos (see TemplateSearch), and whatever you
+ * typed is always offered as a review of its own — so an unusual call costs
+ * one tap rather than sending you off to find the blank-card button.
  */
 @Composable
-private fun TemplateRow(vm: MainViewModel) {
+private fun TemplateSearch(vm: MainViewModel) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var showAll by rememberSaveable { mutableStateOf(false) }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    val matches = remember(query) { searchTemplates(query) }
+    val typed = query.trim()
+    // An exact label hit is already the top row; don't offer it twice.
+    val offerTyped =
+        typed.isNotBlank() && matches.none { it.label.equals(typed, ignoreCase = true) }
+    val visible = if (query.isBlank() && !showAll) emptyList() else matches.take(if (showAll) matches.size else 6)
+
     Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-        SectionLabel("START FROM")
         Row(
+            verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
         ) {
-            reviewTemplates.forEach { template ->
-                NsAction(
-                    label = template.label,
-                    onClick = { vm.addReviewFromTemplate(template) },
-                    tone = priorityColor(template.priority),
-                    filled = true,
+            SectionLabel("WHAT'S THE PROBLEM?", modifier = Modifier.weight(1f))
+            Text(
+                if (showAll) "Hide list" else "Show all (${reviewTemplates.size})",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier =
+                    Modifier
+                        .clickable { showAll = !showAll }
+                        .padding(horizontal = 6.dp, vertical = 10.dp),
+            )
+        }
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text("chest pain, sob, temp, fell…") },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TextSecondary) },
+            trailingIcon = {
+                if (query.isNotBlank()) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "Clear",
+                        tint = TextSecondary,
+                        modifier = Modifier.clickable { query = "" },
+                    )
+                }
+            },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions =
+                KeyboardActions(
+                    onSearch = {
+                        // Enter takes the best match, or the words themselves.
+                        val best = matches.firstOrNull()
+                        if (best != null) {
+                            vm.addReviewFromTemplate(best)
+                        } else if (typed.isNotBlank()) {
+                            vm.addReviewWithReason(typed)
+                        }
+                        query = ""
+                        showAll = false
+                        keyboard?.hide()
+                    },
+                ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        visible.forEach { template ->
+            TemplateRow(
+                label = template.label,
+                detail = template.reason.takeIf { !it.equals(template.label, ignoreCase = true) },
+                tone = priorityColor(template.priority),
+                onClick = {
+                    vm.addReviewFromTemplate(template)
+                    query = ""
+                    showAll = false
+                    keyboard?.hide()
+                },
+            )
+        }
+
+        if (typed.isNotBlank() && matches.isEmpty()) {
+            Text(
+                "Nothing matches — start it as its own review below.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+            )
+        }
+        if (offerTyped) {
+            TemplateRow(
+                label = "Start \"$typed\"",
+                detail = "Blank review with this as the reason",
+                tone = MaterialTheme.colorScheme.primary,
+                onClick = {
+                    vm.addReviewWithReason(typed)
+                    query = ""
+                    showAll = false
+                    keyboard?.hide()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TemplateRow(
+    label: String,
+    detail: String?,
+    tone: Color,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.md),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 56.dp)
+                .background(Surface1, RoundedCornerShape(14.dp))
+                .border(1.dp, tone.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Box(Modifier.size(12.dp).background(tone, CircleShape))
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.titleMedium)
+            if (detail != null) {
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    maxLines = 1,
                 )
             }
         }

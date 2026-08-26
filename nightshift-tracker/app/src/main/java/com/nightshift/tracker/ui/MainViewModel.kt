@@ -168,6 +168,14 @@ class MainViewModel(
             )
         }
 
+    /** Start a review from typed words when no template fits — nothing is lost. */
+    fun addReviewWithReason(reason: String) =
+        viewModelScope.launch {
+            val shift = activeShift.value ?: return@launch
+            val review = repo.addReview(shift.id)
+            repo.updateReview(review.copy(reason = reason.trim()))
+        }
+
     /** Push a live or expired timer out by [minutes] without retyping anything. */
     fun snoozeJob(job: Job, minutes: Int) =
         viewModelScope.launch {
