@@ -136,7 +136,7 @@ class MainViewModel(
 
     fun reopenJob(job: Job) = viewModelScope.launch { repo.updateJob(job.copy(status = 1)) }
 
-    fun completeReview(review: Review) = viewModelScope.launch { repo.updateReview(review.copy(done = true)) }
+    fun completeReview(review: Review) = viewModelScope.launch { repo.completeReview(review) }
 
     fun reopenReview(review: Review) = viewModelScope.launch { repo.updateReview(review.copy(done = false)) }
 
@@ -459,9 +459,12 @@ class MainViewModel(
                         priority = parsed.priority,
                     )
                 repo.updateJob(withDetail)
-                parsed.timerMinutes?.let { mins ->
-                    repo.setJobTimer(withDetail, System.currentTimeMillis() + mins * 60_000L)
-                }
+                // A clock time ("at 0400") and a countdown ("30m") are the same
+                // thing underneath: an absolute deadline with an alarm on it.
+                val due =
+                    parsed.dueAt
+                        ?: parsed.timerMinutes?.let { System.currentTimeMillis() + it * 60_000L }
+                if (due != null) repo.setJobTimer(withDetail, due)
             }
         }
 
@@ -510,6 +513,10 @@ class MainViewModel(
     }
 
     // ---- Escalation (time-stamped, for the documentation trail) ----
+
+    /** An alarm on a review — "chase the gas at 04:00" is the common case. */
+    fun setReviewReminder(review: Review, at: Long?) =
+        viewModelScope.launch { repo.setReviewReminder(review, at) }
 
     fun recordEscalation(review: Review, to: String) =
         viewModelScope.launch {

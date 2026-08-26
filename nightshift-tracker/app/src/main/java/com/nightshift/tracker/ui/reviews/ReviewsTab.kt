@@ -46,11 +46,21 @@ import com.nightshift.tracker.data.Review
 import com.nightshift.tracker.ui.MainViewModel
 import com.nightshift.tracker.ui.components.ArmedDeleteButton
 import com.nightshift.tracker.ui.components.DbTextField
+import com.nightshift.tracker.ui.components.DueTimeDialog
 import com.nightshift.tracker.ui.components.PriorityPicker
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import com.nightshift.tracker.ai.AiFactory
+import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
 import com.nightshift.tracker.ui.design.NsAction
+import com.nightshift.tracker.ui.design.NsChip
+import com.nightshift.tracker.ui.design.dueColor
+import com.nightshift.tracker.ui.design.dueText
+import com.nightshift.tracker.ui.design.isOverdue
+import kotlinx.coroutines.delay
 import com.nightshift.tracker.ui.design.SectionLabel
 import com.nightshift.tracker.ui.design.Space
 import com.nightshift.tracker.ui.design.fabAlignment
@@ -206,8 +216,20 @@ private fun ReviewCard(
     var expanded by rememberSaveable(review.id) {
         mutableStateOf(review.reason.isBlank() && review.impression.isBlank())
     }
+    var showReminder by rememberSaveable(review.id) { mutableStateOf(false) }
     val context = LocalContext.current
-    val accent = priorityColor(review.priority)
+
+    // A review with an alarm on it warms from green to red like a job does —
+    // "recheck the potassium at 0400" is a deadline, not a preference.
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(review.remindAt) {
+        while (review.remindAt != null) {
+            now = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    val remind = review.remindAt
+    val accent = dueColor(remind, review.priority, now)
 
     Column(
         modifier =
@@ -241,6 +263,11 @@ private fun ReviewCard(
                         color = TextSecondary,
                         maxLines = if (expanded) 10 else 1,
                     )
+                }
+                if (remind != null) {
+                    Row(modifier = Modifier.padding(top = 4.dp)) {
+                        NsChip(dueText(remind, now), accent, strong = isOverdue(remind, now))
+                    }
                 }
             }
             Icon(
@@ -289,6 +316,17 @@ private fun ReviewCard(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 PriorityPicker(selected = review.priority, onSelect = { vm.updateReview(review.copy(priority = it)) })
+
+                // Alarm on the patient, not on a task: "come back to bed 12 at
+                // 0400". Same absolute-deadline mechanism as a job timer, so it
+                // survives a force-quit and a reboot.
+                NsAction(
+                    label = if (remind == null) "Set a reminder" else "Reminder ${dueText(remind, now)}",
+                    onClick = { showReminder = true },
+                    icon = Icons.Filled.Alarm,
+                    tone = if (remind == null) null else accent,
+                    filled = remind != null,
+                )
 
                 Text("ABCDE", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                 abcdeCheats.forEach { cheat ->
@@ -420,6 +458,27 @@ private fun ReviewCard(
                 }
             }
         }
+    }
+
+    if (showReminder) {
+        DueTimeDialog(
+            title = "Come back to this patient",
+            current = review.remindAt,
+            onDismiss = { showReminder = false },
+            onClear =
+                if (review.remindAt != null) {
+                    {
+                        vm.setReviewReminder(review, null)
+                        showReminder = false
+                    }
+                } else {
+                    null
+                },
+            onPick = { at ->
+                vm.setReviewReminder(review, at)
+                showReminder = false
+            },
+        )
     }
 }
 

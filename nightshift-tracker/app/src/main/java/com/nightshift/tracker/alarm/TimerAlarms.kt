@@ -114,9 +114,17 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val now = System.currentTimeMillis()
-                AppDatabase.get(context).jobDao().withTimers().forEach { job ->
+                val db = AppDatabase.get(context)
+                db.jobDao().withTimers().forEach { job ->
                     val end = job.timerEndAt ?: return@forEach
                     if (end > now) TimerAlarms.schedule(context, job.id, job.text, end)
+                }
+                db.reviewDao().withReminders().forEach { review ->
+                    val at = review.remindAt ?: return@forEach
+                    if (at > now) {
+                        val who = review.patientName.ifBlank { "Bed ${review.bed}" }
+                        TimerAlarms.schedule(context, review.id, "Review: $who", at)
+                    }
                 }
             } finally {
                 result.finish()

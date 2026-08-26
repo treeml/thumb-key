@@ -45,11 +45,18 @@ class Repository(
 
     suspend fun archiveShift(shift: Shift) =
         commit {
-            // Kill any live timers on this shift's jobs before it leaves the board.
+            // Kill any live alarms on this shift before it leaves the board —
+            // nothing is worse than a finished shift waking you at 0400.
             jobDao.forShiftOnce(shift.id).forEach { job ->
                 if (job.timerEndAt != null) {
                     TimerAlarms.cancel(context, job.id)
                     jobDao.update(job.copy(timerEndAt = null))
+                }
+            }
+            reviewDao.forShiftOnce(shift.id).forEach { review ->
+                if (review.remindAt != null) {
+                    TimerAlarms.cancel(context, review.id)
+                    reviewDao.upsert(review.copy(remindAt = null))
                 }
             }
             shiftDao.upsert(shift.copy(archived = true, archivedAt = System.currentTimeMillis()))
@@ -65,8 +72,14 @@ class Repository(
                     rounds = wardRoundDao.forShiftOnce(shift.id),
                     beds = bedDao.forShiftOnce(shift.id),
                 )
-            snapshot.jobs.forEach { jobDao.delete(it.id) }
-            snapshot.reviews.forEach { reviewDao.delete(it.id) }
+            snapshot.jobs.forEach {
+                if (it.timerEndAt != null) TimerAlarms.cancel(context, it.id)
+                jobDao.delete(it.id)
+            }
+            snapshot.reviews.forEach {
+                if (it.remindAt != null) TimerAlarms.cancel(context, it.id)
+                reviewDao.delete(it.id)
+            }
             snapshot.rounds.forEach { wardRoundDao.delete(it.id) }
             snapshot.beds.forEach { bedDao.delete(it.id) }
             shiftDao.delete(shift.id)
@@ -77,8 +90,20 @@ class Repository(
         commit {
             shiftDao.upsert(data.shift)
             data.beds.forEach { bedDao.upsert(it) }
-            data.jobs.forEach { jobDao.upsert(it) }
-            data.reviews.forEach { reviewDao.upsert(it) }
+            val now = System.currentTimeMillis()
+            data.jobs.forEach { job ->
+                jobDao.upsert(job)
+                job.timerEndAt?.let { if (it > now) TimerAlarms.schedule(context, job.id, job.text, it) }
+            }
+            data.reviews.forEach { review ->
+                reviewDao.upsert(review)
+                review.remindAt?.let {
+                    if (it > now) {
+                        val who = review.patientName.ifBlank { "Bed " + review.bed }
+                        TimerAlarms.schedule(context, review.id, "Review: " + who, it)
+                    }
+                }
+            }
             data.rounds.forEach { wardRoundDao.upsert(it) }
         }
 
@@ -177,9 +202,40 @@ class Repository(
 
     suspend fun updateReview(review: Review) = commit { reviewDao.upsert(review) }
 
-    suspend fun deleteReview(review: Review) = commit { reviewDao.delete(review.id) }
+    /** Done: park it in the Completed drawer, and stop it alarming. */
+    suspend fun completeReview(review: Review) =
+        commit {
+            if (review.remindAt != null) TimerAlarms.cancel(context, review.id)
+            reviewDao.upsert(review.copy(done = true, remindAt = null))
+        }
 
-    suspend fun restoreReview(review: Review) = commit { reviewDao.upsert(review) }
+    suspend fun setReviewReminder(review: Review, at: Long?) =
+        commit {
+            if (at == null) {
+                TimerAlarms.cancel(context, review.id)
+            } else {
+                val who = review.patientName.ifBlank { "Bed ${review.bed}" }
+                TimerAlarms.schedule(context, review.id, "Review: $who", at)
+            }
+            reviewDao.upsert(review.copy(remindAt = at))
+        }
+
+    suspend fun deleteReview(review: Review) =
+        commit {
+            if (review.remindAt != null) TimerAlarms.cancel(context, review.id)
+            reviewDao.delete(review.id)
+        }
+
+    suspend fun restoreReview(review: Review) =
+        commit {
+            reviewDao.upsert(review)
+            review.remindAt?.let { at ->
+                if (at > System.currentTimeMillis()) {
+                    val who = review.patientName.ifBlank { "Bed " + review.bed }
+                    TimerAlarms.schedule(context, review.id, "Review: " + who, at)
+                }
+            }
+        }
 
     suspend fun addRound(shiftId: String): WardRound =
         commit {

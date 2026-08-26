@@ -108,6 +108,9 @@ interface ReviewDao {
     @Query("SELECT * FROM reviews WHERE shiftId = :shiftId ORDER BY priority, createdAt")
     suspend fun forShiftOnce(shiftId: String): List<Review>
 
+    @Query("SELECT * FROM reviews WHERE remindAt IS NOT NULL")
+    suspend fun withReminders(): List<Review>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(review: Review)
 

@@ -85,6 +85,8 @@ data class Review(
     val escalatedAt: Long? = null,
     // Done = hidden from the active list, parked in the Completed drawer.
     val done: Boolean = false,
+    /** Optional alarm for this patient, e.g. recheck at 04:00. */
+    val remindAt: Long? = null,
     val createdAt: Long,
 )
 

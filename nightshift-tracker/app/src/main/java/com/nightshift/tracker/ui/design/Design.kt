@@ -68,20 +68,29 @@ fun rememberTick(): () -> Unit {
     }
 }
 
-/** The standard card. No border by default — separation comes from surface. */
+/**
+ * The standard card. No border by default — separation comes from surface.
+ *
+ * [tint] washes the whole card in a colour at low alpha. It exists for one
+ * thing: a job with a deadline should be readable as urgent from arm's length,
+ * without having to find and read a small countdown.
+ */
 @Composable
 fun NsCard(
     modifier: Modifier = Modifier,
     accent: Color? = null,
+    tint: Color? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val shape = RoundedCornerShape(Radius.lg)
     Column(
         modifier
             .fillMaxWidth()
-            .background(Surface1, RoundedCornerShape(Radius.lg))
+            .background(Surface1, shape)
+            .then(if (tint != null) Modifier.background(tint.copy(alpha = 0.10f), shape) else Modifier)
             .then(
                 if (accent != null) {
-                    Modifier.border(1.dp, accent.copy(alpha = 0.45f), RoundedCornerShape(Radius.lg))
+                    Modifier.border(1.dp, accent.copy(alpha = 0.55f), shape)
                 } else {
                     Modifier
                 },

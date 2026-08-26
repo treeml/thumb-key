@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProcedureLog::class,
         LearningItem::class,
     ],
-    version = 5,
+    version = 6,
     // Off deliberately: KSP args are global rather than per-flavor, so two
     // flavors exporting schemas in one build race on the same file. Room still
     // validates the hand-written migrations against the entities at runtime.
@@ -117,6 +117,14 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        // v6: reviews can carry their own alarm.
+        private val MIGRATION_5_6 =
+            object : Migration(5, 6) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE reviews ADD COLUMN remindAt INTEGER")
+                }
+            }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room
@@ -127,7 +135,7 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     // WAL: atomic, crash-safe commits; readers never block the writer.
                     .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     // No destructive fallback — an app update must never wipe data.
                     .build()
                     .also { instance = it }
