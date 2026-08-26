@@ -94,6 +94,13 @@ data class Review(
     val done: Boolean = false,
     /** Optional alarm for this patient, e.g. recheck at 04:00. */
     val remindAt: Long? = null,
+    /**
+     * Which presentation this review was started from, so the card can show
+     * that template's differential and workup prompts. The label, not the text:
+     * the guidance is app content, not the user's words, and improving it later
+     * should improve every review already started from it.
+     */
+    val templateKey: String = "",
     val createdAt: Long,
 )
 

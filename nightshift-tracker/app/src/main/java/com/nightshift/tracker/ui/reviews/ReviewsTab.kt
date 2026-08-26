@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nightshift.tracker.data.Review
 import com.nightshift.tracker.ui.MainViewModel
@@ -270,6 +271,9 @@ private fun TemplateSearch(vm: MainViewModel) {
             TemplateRow(
                 label = template.label,
                 detail = template.reason.takeIf { !it.equals(template.label, ignoreCase = true) },
+                // A line of the differential, so you can see the card carries
+                // real prompts before you commit to it.
+                hint = template.thinkAbout.takeIf { it.isNotBlank() },
                 tone = priorityColor(template.priority),
                 onClick = {
                     vm.addReviewFromTemplate(template)
@@ -288,10 +292,15 @@ private fun TemplateSearch(vm: MainViewModel) {
             )
         }
         if (offerTyped) {
+            // Deliberately the plainest row on screen. It used to look exactly
+            // as substantial as a real template while carrying none of the
+            // prompts, which made it easy to pick by mistake and then wonder
+            // where the help went.
             TemplateRow(
-                label = "Start \"$typed\"",
-                detail = "Blank review with this as the reason",
-                tone = MaterialTheme.colorScheme.primary,
+                label = "Not on the list — start \"$typed\"",
+                detail = "Blank review, no prompts",
+                tone = TextSecondary,
+                muted = true,
                 onClick = {
                     vm.addReviewWithReason(typed)
                     query = ""
@@ -309,28 +318,47 @@ private fun TemplateRow(
     detail: String?,
     tone: Color,
     onClick: () -> Unit,
+    hint: String? = null,
+    muted: Boolean = false,
 ) {
     Row(
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(Space.md),
         modifier =
             Modifier
                 .fillMaxWidth()
                 .defaultMinSize(minHeight = 56.dp)
                 .background(Surface1, RoundedCornerShape(14.dp))
-                .border(1.dp, tone.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-                .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .border(
+                    1.dp,
+                    if (muted) Outline else tone.copy(alpha = 0.35f),
+                    RoundedCornerShape(14.dp),
+                ).clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Box(Modifier.size(12.dp).background(tone, CircleShape))
-        Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.titleMedium)
+        Box(Modifier.padding(top = 5.dp).size(12.dp).background(tone, CircleShape))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (muted) TextSecondary else MaterialTheme.colorScheme.onSurface,
+            )
             if (detail != null) {
                 Text(
                     detail,
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (hint != null) {
+                Text(
+                    hint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = CardBody,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -344,10 +372,13 @@ private fun ReviewCard(
     vm: MainViewModel,
     generation: Int,
 ) {
-    // Filled reviews collapse to their header; a fresh one opens ready to type.
-    var expanded by rememberSaveable(review.id) {
-        mutableStateOf(review.reason.isBlank() && review.impression.isBlank())
-    }
+    // Open until it has actually been worked. The old rule keyed off a blank
+    // reason, which meant a review started from a template opened COLLAPSED —
+    // so its differential and workup sat behind a tap nobody knew to make.
+    val untouched =
+        review.impression.isBlank() && review.plan.isBlank() &&
+            listOf(review.a, review.b, review.c, review.d, review.e).all { it.isBlank() }
+    var expanded by rememberSaveable(review.id) { mutableStateOf(untouched) }
     var showReminder by rememberSaveable(review.id) { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -475,6 +506,8 @@ private fun ReviewCard(
                         seedKey = "${review.id}-$generation-reason",
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    templateFor(review.templateKey)?.let { GuidancePanel(it) }
+
                     PriorityPicker(selected = review.priority, onSelect = { vm.updateReview(review.copy(priority = it)) })
 
                     // Alarm on the patient, not on a task: "come back to bed 12 at
@@ -640,6 +673,79 @@ private fun ReviewCard(
                 showReminder = false
             },
         )
+    }
+}
+
+/**
+ * What the presentation is likely to be, and what to order — on the card, open,
+ * where it will actually be read at 4 am.
+ *
+ * It sits above the ABCDE fields deliberately: the differential is what you
+ * want in your head *before* you start writing, and putting it inside a text
+ * field you have to scroll to is the same as not having it at all.
+ */
+@Composable
+private fun GuidancePanel(template: ReviewTemplate) {
+    var open by rememberSaveable(template.label) { mutableStateOf(true) }
+    val tone = priorityColor(template.priority)
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(tone.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+            .border(1.dp, tone.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { open = !open }
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+        ) {
+            Text(
+                template.label.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = tone,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (open) "Hide prompts" else "Show prompts",
+                tint = tone,
+            )
+        }
+        if (open) {
+            Column(
+                Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (template.thinkAbout.isNotBlank()) {
+                    GuidanceBlock("THINK ABOUT", template.thinkAbout, tone)
+                }
+                if (template.workupPrompt.isNotBlank()) {
+                    GuidanceBlock("WORKUP", template.workupPrompt, tone)
+                }
+                Text(
+                    "Prompts only. Nothing here is a finding, and none of it reaches your " +
+                        "note until you type it.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GuidanceBlock(
+    heading: String,
+    body: String,
+    tone: Color,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(heading, style = MaterialTheme.typography.labelSmall, color = tone)
+        Text(body, style = MaterialTheme.typography.bodyMedium, color = CardBody)
     }
 }
 

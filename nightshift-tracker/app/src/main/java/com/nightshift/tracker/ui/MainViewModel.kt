@@ -164,6 +164,7 @@ class MainViewModel(
                     reason = template.reason,
                     priority = template.priority,
                     investigations = template.workupPrompt,
+                    templateKey = template.label,
                 ),
             )
         }
