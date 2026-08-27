@@ -118,7 +118,7 @@ fun JobsTab(
     val jobs = vm.jobs.collectAsStateValue()
     val beds = vm.beds.collectAsStateValue()
     val seed = vm.captureSeed.collectAsStateValue()
-    val lastBedId = vm.openBedId.collectAsStateValue()
+    val target = vm.captureTarget.collectAsStateValue()
     // Ticks, so the board re-sorts itself as deadlines come round.
     val now = rememberNow()
 
@@ -134,7 +134,6 @@ fun JobsTab(
             .filter { bed -> open.any { it.bedId == bed.id } }
             .sortedWith(compareBy({ bedRank(it.label).first }, { bedRank(it.label).second }))
     val unassigned = open.filter { it.bedId == null }
-    val lastBed = beds.firstOrNull { it.id == lastBedId }
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -203,7 +202,7 @@ fun JobsTab(
             onCapture = { vm.captureJob(it) },
             seed = seed,
             onSeedConsumed = { vm.clearCaptureSeed() },
-            targetLabel = lastBed?.label,
+            targetLabel = target?.label,
         )
     }
 

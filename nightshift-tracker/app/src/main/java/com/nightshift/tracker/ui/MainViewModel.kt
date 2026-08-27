@@ -25,6 +25,7 @@ import com.nightshift.tracker.ui.reviews.ReviewTemplate
 import com.nightshift.tracker.ui.rounds.buildRoundNote
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -410,6 +411,26 @@ class MainViewModel(
      */
     val openBedId = MutableStateFlow<String?>(null)
 
+    /**
+     * The bed the capture bar will actually write to.
+     *
+     * Derived, never stored, because a stored "current bed" drifts: finish the
+     * last job on bed 67 and the bed leaves the board, but the bar carries on
+     * promising to file things there. The rule is the one you can see — the bed
+     * is the target while it still has work on it, or while it is brand new and
+     * waiting for its first job (opened from a ward round card). A bed whose
+     * jobs are all done is neither, so the bar goes back to "No bed yet".
+     *
+     * Deriving it also means the label on the bar and the bed captureJob picks
+     * are the same value, so what it says and what it does cannot diverge.
+     */
+    val captureTarget: StateFlow<Bed?> =
+        combine(beds, jobs, openBedId) { allBeds, allJobs, id ->
+            val bed = allBeds.firstOrNull { it.id == id } ?: return@combine null
+            val mine = allJobs.filter { it.bedId == bed.id }
+            if (mine.isEmpty() || mine.any { it.status != 2 }) bed else null
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     fun openBed(bedId: String?) {
         openBedId.value = bedId
         if (bedId != null) captureSeed.value = ""
@@ -450,7 +471,7 @@ class MainViewModel(
     fun captureJob(raw: String) =
         viewModelScope.launch {
             val shift = activeShift.value ?: return@launch
-            var current = beds.value.firstOrNull { it.id == openBedId.value }
+            var current = captureTarget.value
             val lines = raw.split('\n', ';').map { it.trim() }.filter { it.isNotBlank() }
             for (line in lines) {
                 val parsed = parseCapture(line)
