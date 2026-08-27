@@ -1,23 +1,33 @@
 package com.nightshift.tracker.ui.capture
 
 /**
- * Turns one spoken or typed line into a structured job.
+ * Turns one vomited line into a structured job.
  *
- * The whole point is that on a moving round you type (or dictate) the way you
- * would say it, and never touch a dropdown:
+ * The way this actually gets used is not "fill in a form" — it is one box, at
+ * speed, in the order the words come out:
  *
- *   "b12 chase potassium !1 30m"        -> bed 12, urgent, 30-min timer
- *   "bed 7 recheck BP in 30 min urgent" -> bed 7, urgent, 30-min timer
- *   "review bloods later"               -> routine, no timer
+ *   "b56 MB 122484 chase potassium"      -> bed 56, MB, MRN 122484, the task
+ *   "b1w9b JS 9981234 review at 0400"    -> bed 1W9B, JS, MRN, alarm at 04:00
+ *   "b12 chase potassium !1 30m"         -> bed 12, urgent, 30-minute timer
+ *   "review bloods later"                -> no bed, routine, no timer
+ *
+ * Identity is read as a *leading run*: bed, initials and MRN are only taken
+ * from the front of the line, and the first token that is none of those ends
+ * the run — everything after it is the task, untouched. That is what stops
+ * "b12 do bloods" reading "do" as somebody's initials, and it is why the task
+ * text never has to be quoted or delimited.
  *
  * Parsing is always *shown* before it commits (the chips under the bar), so it
- * never silently guesses wrong — the user can see and correct it.
+ * never silently guesses wrong — the user can see it and correct it.
  */
 data class ParsedCapture(
     val text: String,
     val bed: String,
-    val priority: Int,
-    val timerMinutes: Int?,
+    /** Patient initials or name, when the line led with them. */
+    val patient: String = "",
+    val mrn: String = "",
+    val priority: Int = 2,
+    val timerMinutes: Int? = null,
     /** Absolute deadline in epoch millis, from a clock time like "at 0400". */
     val dueAt: Long? = null,
 ) {
@@ -100,6 +110,87 @@ fun parseClock(raw: String, now: Long = System.currentTimeMillis()): Long? {
     return nextOccurrence(hour, minute, now)
 }
 
+// ---- the leading identity run: bed, initials, MRN ----
+
+/** "b56", "r34", "w9b", and chained forms like "b1w9b" (bed 1, ward 9B). */
+private val LOC_SHORT = Regex("""^(?:[brw]\d{1,3}[a-z]?)+$""", RegexOption.IGNORE_CASE)
+private val LOC_WORD = Regex("""^(?:bed|room|rm|ward)$""", RegexOption.IGNORE_CASE)
+private val LOC_NUMBER = Regex("""^\d{1,3}[a-z]?$""", RegexOption.IGNORE_CASE)
+private val MRN_TOKEN = Regex("""^\d{5,9}$""")
+private val INITIALS_TOKEN = Regex("""^[A-Za-z]{2,3}$""")
+
+/**
+ * Two- and three-letter things that are never somebody's initials. Without
+ * this, "b12 CT chest" files the patient as "CT" — and the ones that matter
+ * are exactly the ones a tired person types most.
+ */
+private val NOT_INITIALS =
+    setOf(
+        "ct", "mri", "us", "cxr", "abg", "vbg", "ecg", "egc", "fbc", "uec", "lft", "crp",
+        "inr", "tft", "bsl", "iv", "im", "ng", "po", "pr", "sc", "id", "idc", "tov", "spc",
+        "cbi", "ivc", "pca", "nbm", "dvt", "pe", "af", "met", "icu", "ed", "ot", "gcs",
+        "cvc", "tta", "obs", "uo", "hb", "wcc", "egf", "mg", "ml", "mcg", "iu", "bd", "tds",
+        "qid", "prn", "hrs", "min", "am", "pm", "kg", "cm", "mm",
+        // ordinary words that are the right length to be mistaken for initials
+        "do", "go", "get", "see", "add", "ask", "put", "for", "and", "the", "new", "not",
+        "but", "out", "off", "per", "via", "day", "why", "how", "who", "re", "up", "at",
+        "in", "on", "if", "is", "to", "as", "by", "an", "or", "no", "ok", "let", "ask",
+        "chg", "chk", "nil", "low", "big", "red", "hot", "all", "one", "two", "six", "ten",
+    )
+
+private fun normaliseBed(token: String): String {
+    // "b56" is bed 56, not bed B56 — but "r34" and "w9b" keep their letter,
+    // because there the letter is the location, not a marker.
+    val stripped = if (Regex("""^b\d""", RegexOption.IGNORE_CASE).containsMatchIn(token)) token.drop(1) else token
+    return stripped.uppercase()
+}
+
+private class Identity(val bed: String, val patient: String, val mrn: String, val rest: String)
+
+private fun peelIdentity(raw: String): Identity {
+    val tokens = raw.trim().split(Regex("""\s+""")).filter { it.isNotBlank() }
+    val bedParts = mutableListOf<String>()
+    var patient = ""
+    var mrn = ""
+    var i = 0
+    // An all-caps line carries no signal from capitalisation, so initials there
+    // must earn their place by being followed by an MRN.
+    val shouty = raw == raw.uppercase()
+
+    while (i < tokens.size) {
+        val token = tokens[i].trim('.', ',', ':', ';', '-')
+        if (token.isEmpty()) break
+
+        if (LOC_WORD.matches(token) && i + 1 < tokens.size && LOC_NUMBER.matches(tokens[i + 1])) {
+            bedParts += tokens[i + 1].uppercase()
+            i += 2
+            continue
+        }
+        if (LOC_SHORT.matches(token) && token.any { it.isDigit() }) {
+            bedParts += normaliseBed(token)
+            i += 1
+            continue
+        }
+        if (mrn.isEmpty() && MRN_TOKEN.matches(token)) {
+            mrn = token
+            i += 1
+            continue
+        }
+        if (patient.isEmpty() && INITIALS_TOKEN.matches(token) && token.lowercase() !in NOT_INITIALS) {
+            val next = tokens.getOrNull(i + 1)?.trim('.', ',', ':', ';', '-').orEmpty()
+            if ((token == token.uppercase() && !shouty) || MRN_TOKEN.matches(next)) {
+                patient = token.uppercase()
+                i += 1
+                continue
+            }
+        }
+        break
+    }
+    return Identity(bedParts.joinToString(" "), patient, mrn, tokens.drop(i).joinToString(" "))
+}
+
+// ---- the rest of the line ----
+
 private val BED_SHORT = Regex("""\bb(\d{1,3}[a-dA-D]?)\b""")
 private val BED_WORD = Regex("""\bbed\s*(\d{1,3}[a-dA-D]?)\b""", RegexOption.IGNORE_CASE)
 private val BANG_PRIORITY = Regex("""(?:^|\s)!([123])\b""")
@@ -111,8 +202,9 @@ private val ROUTINE_WORDS = Regex("""\b(routine|later|whenever|non[- ]urgent)\b"
 private val FILLER = Regex("""\b(in|at|for)\s*$""", RegexOption.IGNORE_CASE)
 
 fun parseCapture(raw: String, now: Long = System.currentTimeMillis()): ParsedCapture {
-    var text = raw
-    var bed = ""
+    val identity = peelIdentity(raw)
+    var text = identity.rest
+    var bed = identity.bed
     var priority = 2
     var minutes: Int? = null
     var dueAt: Long? = null
@@ -140,8 +232,9 @@ fun parseCapture(raw: String, now: Long = System.currentTimeMillis()): ParsedCap
         if (mins != null) minutes = (minutes ?: 0) + mins
     }
 
-    consume(BED_WORD) { m -> bed = m.groupValues[1] }
-    if (bed.isBlank()) consume(BED_SHORT) { m -> bed = m.groupValues[1] }
+    // A bed named mid-sentence ("chase the gas, bed 12") still counts.
+    if (bed.isBlank()) consume(BED_WORD) { m -> bed = m.groupValues[1].uppercase() }
+    if (bed.isBlank()) consume(BED_SHORT) { m -> bed = m.groupValues[1].uppercase() }
 
     consume(BANG_PRIORITY) { m -> priority = m.groupValues[1].toInt() }
     if (priority == 2) {
@@ -163,6 +256,8 @@ fun parseCapture(raw: String, now: Long = System.currentTimeMillis()): ParsedCap
     return ParsedCapture(
         text = text,
         bed = bed,
+        patient = identity.patient,
+        mrn = identity.mrn,
         priority = priority,
         timerMinutes = minutes,
         dueAt = dueAt,
@@ -172,7 +267,9 @@ fun parseCapture(raw: String, now: Long = System.currentTimeMillis()): ParsedCap
 /** Human-readable summary of what the parser understood, for the chips. */
 fun ParsedCapture.chips(): List<String> =
     buildList {
-        if (bed.isNotBlank()) add("Bed $bed")
+        if (bed.isNotBlank()) add(bedLabel(bed))
+        if (patient.isNotBlank()) add(patient)
+        if (mrn.isNotBlank()) add("MRN $mrn")
         add(
             when (priority) {
                 1 -> "URGENT"
@@ -191,3 +288,11 @@ fun ParsedCapture.chips(): List<String> =
             add("due ${fmt.format(java.util.Date(due))} · $within")
         }
     }
+
+/**
+ * How a bed reads on screen. A purely numeric label gets "Bed" in front of it;
+ * anything carrying its own letters ("R34", "1W9B") is already a location and
+ * "Bed R34" would just be noise.
+ */
+fun bedLabel(label: String): String =
+    if (label.isNotBlank() && label.all { it.isDigit() }) "Bed $label" else label

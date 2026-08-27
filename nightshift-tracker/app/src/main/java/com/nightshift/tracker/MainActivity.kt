@@ -47,6 +47,7 @@ import com.nightshift.tracker.ui.settings.AppSettings
 import com.nightshift.tracker.ui.settings.SettingsScreen
 import com.nightshift.tracker.ui.shift.EndShiftScreen
 import com.nightshift.tracker.ui.shift.ShiftScreen
+import com.nightshift.tracker.ui.jobs.JobDetailScreen
 import com.nightshift.tracker.ui.theme.Ink
 import com.nightshift.tracker.ui.theme.NightshiftTheme
 import com.nightshift.tracker.ui.theme.Surface2
@@ -99,8 +100,11 @@ class MainActivity : ComponentActivity() {
 private fun AppRoot(vm: MainViewModel = viewModel()) {
     val screen by vm.screen.collectAsStateWithLifecycle()
 
+    val generation by vm.dataGeneration.collectAsStateWithLifecycle()
+
     when (val s = screen) {
         is Screen.ArchiveDetail -> ArchiveDetailScreen(vm, s.shiftId)
+        is Screen.JobDetail -> JobDetailScreen(vm, s.jobId, generation)
         Screen.BatchNotes -> BatchNotesScreen(vm)
         Screen.Handover -> HandoverScreen(vm)
         Screen.EndShift -> EndShiftScreen(vm)

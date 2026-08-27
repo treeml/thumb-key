@@ -33,7 +33,9 @@ data class Bed(
     @PrimaryKey val id: String,
     val shiftId: String,
     val label: String,
+    /** Initials or a name — whatever came out of the capture bar. */
     val patientName: String = "",
+    val mrn: String = "",
     val createdAt: Long,
 )
 

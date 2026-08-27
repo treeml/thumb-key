@@ -58,6 +58,14 @@ sealed interface Screen {
 
     /** Handedness, readability, note tidying. */
     data object Settings : Screen
+
+    /**
+     * One job, full screen. Editing used to happen by expanding the card in
+     * place, which meant the form was always half under the keyboard and
+     * always required scrolling — and scrolling a list you are typing into is
+     * how you tap the wrong row.
+     */
+    data class JobDetail(val jobId: String) : Screen
 }
 
 sealed interface AiState {
@@ -407,14 +415,6 @@ class MainViewModel(
         if (bedId != null) captureSeed.value = ""
     }
 
-    fun addBed(label: String) =
-        viewModelScope.launch {
-            val shift = activeShift.value ?: return@launch
-            if (label.isBlank()) return@launch
-            val bed = repo.addBed(shift.id, label)
-            openBedId.value = bed.id
-        }
-
     fun updateBed(bed: Bed) = viewModelScope.launch { repo.updateBed(bed) }
 
     fun deleteBedWithUndo(bed: Bed) =
@@ -429,9 +429,7 @@ class MainViewModel(
         viewModelScope.launch {
             val shift = activeShift.value ?: return@launch
             val trimmed = label.trim()
-            val existing = beds.value.firstOrNull { it.label.equals(trimmed, ignoreCase = true) }
-            val bed = existing ?: if (trimmed.isBlank()) null else repo.addBed(shift.id, trimmed)
-            openBedId.value = bed?.id
+            openBedId.value = if (trimmed.isBlank()) null else repo.ensureBed(shift.id, trimmed).id
             activeTab.value = 0
             captureSeed.value = ""
         }
@@ -441,24 +439,40 @@ class MainViewModel(
      * comes in clumps. Newlines and semicolons split into separate jobs, so
      * "chase bloods; order CT; call family" is three jobs, not one.
      *
-     * Jobs land on whichever bed is open. A line naming its own bed still wins.
+     * The bed is created by the act of writing the job. There is no separate
+     * step for entering beds any more: the version that had one was never used,
+     * because stopping to set up a bed before you can write the thing you are
+     * trying not to forget is exactly backwards.
+     *
+     * A line with no bed of its own falls back to the last bed written to, so
+     * a run of jobs for one patient only needs the bed on the first line.
      */
     fun captureJob(raw: String) =
         viewModelScope.launch {
             val shift = activeShift.value ?: return@launch
-            val current = beds.value.firstOrNull { it.id == openBedId.value }
+            var current = beds.value.firstOrNull { it.id == openBedId.value }
             val lines = raw.split('\n', ';').map { it.trim() }.filter { it.isNotBlank() }
             for (line in lines) {
                 val parsed = parseCapture(line)
                 if (parsed.isEmpty) continue
-                // A bed typed into the line takes precedence, creating it if new.
                 val target =
                     if (parsed.bed.isNotBlank()) {
-                        beds.value.firstOrNull { it.label.equals(parsed.bed, ignoreCase = true) }
-                            ?: repo.addBed(shift.id, parsed.bed)
+                        repo.ensureBed(shift.id, parsed.bed, parsed.patient, parsed.mrn)
                     } else {
-                        current
+                        // Same patient, next job: keep the details flowing onto
+                        // the bed even when only the first line named it.
+                        current?.let {
+                            if (parsed.patient.isNotBlank() || parsed.mrn.isNotBlank()) {
+                                repo.ensureBed(shift.id, it.label, parsed.patient, parsed.mrn)
+                            } else {
+                                it
+                            }
+                        }
                     }
+                if (target != null) {
+                    current = target
+                    openBedId.value = target.id
+                }
                 val job = repo.addJob(shift.id)
                 val withDetail =
                     job.copy(
@@ -476,6 +490,10 @@ class MainViewModel(
                 if (due != null) repo.setJobTimer(withDetail, due)
             }
         }
+
+    fun openJob(job: Job) {
+        screen.value = Screen.JobDetail(job.id)
+    }
 
     /** Move a single job to another bed (or off the beds entirely). */
     fun moveJobToBed(job: Job, bed: Bed?) =

@@ -103,10 +103,11 @@ fun CaptureBar(
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
             modifier = Modifier.horizontalScroll(rememberScrollState()),
         ) {
-            // Where these words are going. No mode to set: it follows the bed
-            // you have open, so what you see is what you get.
+            // Where these words are going. No mode to set: it follows the last
+            // bed you wrote to, so a run of jobs for one patient only needs the
+            // bed on the first line.
             Text(
-                if (targetLabel.isNullOrBlank()) "No bed open" else "→ Bed $targetLabel",
+                if (targetLabel.isNullOrBlank()) "No bed yet" else "→ ${bedLabel(targetLabel)}",
                 style = MaterialTheme.typography.labelSmall,
                 color =
                     if (targetLabel.isNullOrBlank()) {
@@ -138,7 +139,7 @@ fun CaptureBar(
                     placeholder = {
                         Text(
                             if (targetLabel.isNullOrBlank()) {
-                                "b12 chase K+ !1 30m"
+                                "b56 MB 122484 chase potassium 0400"
                             } else {
                                 "chase K+ ; order CT ; call family"
                             },

@@ -109,13 +109,35 @@ class Repository(
 
     // ---- Beds ----
 
-    suspend fun addBed(shiftId: String, label: String): Bed =
+    /**
+     * The bed named by a captured line, created if this is the first time it
+     * has been mentioned. Beds are no longer something you sit down and enter —
+     * they appear as a side effect of writing the job, which is the only way
+     * anyone was ever going to keep them accurate.
+     *
+     * Matching is case-insensitive so "b12" and "B12" are one bed. Details only
+     * ever fill blanks: a later line that omits the MRN must not erase it.
+     */
+    suspend fun ensureBed(
+        shiftId: String,
+        label: String,
+        patient: String = "",
+        mrn: String = "",
+    ): Bed =
         commit {
+            val wanted = label.trim()
+            val existing =
+                bedDao.forShiftOnce(shiftId).firstOrNull { it.label.equals(wanted, ignoreCase = true) }
             val bed =
-                Bed(
+                existing?.copy(
+                    patientName = existing.patientName.ifBlank { patient.trim() },
+                    mrn = existing.mrn.ifBlank { mrn.trim() },
+                ) ?: Bed(
                     id = UUID.randomUUID().toString(),
                     shiftId = shiftId,
-                    label = label.trim(),
+                    label = wanted,
+                    patientName = patient.trim(),
+                    mrn = mrn.trim(),
                     createdAt = System.currentTimeMillis(),
                 )
             bedDao.upsert(bed)

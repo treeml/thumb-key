@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProcedureLog::class,
         LearningItem::class,
     ],
-    version = 7,
+    version = 8,
     // Off deliberately: KSP args are global rather than per-flavor, so two
     // flavors exporting schemas in one build race on the same file. Room still
     // validates the hand-written migrations against the entities at runtime.
@@ -134,6 +134,14 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        // v8: a bed carries the MRN, because the capture bar now reads one.
+        private val MIGRATION_7_8 =
+            object : Migration(7, 8) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE beds ADD COLUMN mrn TEXT NOT NULL DEFAULT ''")
+                }
+            }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room
@@ -151,6 +159,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_4_5,
                         MIGRATION_5_6,
                         MIGRATION_6_7,
+                        MIGRATION_7_8,
                     )
                     // No destructive fallback — an app update must never wipe data.
                     .build()
