@@ -48,6 +48,8 @@ import com.nightshift.tracker.ui.settings.SettingsScreen
 import com.nightshift.tracker.ui.shift.EndShiftScreen
 import com.nightshift.tracker.ui.shift.ShiftScreen
 import com.nightshift.tracker.ui.jobs.JobDetailScreen
+import com.nightshift.tracker.ui.reviews.NewReviewScreen
+import com.nightshift.tracker.ui.reviews.ReviewDetailScreen
 import com.nightshift.tracker.ui.theme.Ink
 import com.nightshift.tracker.ui.theme.NightshiftTheme
 import com.nightshift.tracker.ui.theme.Surface2
@@ -105,6 +107,8 @@ private fun AppRoot(vm: MainViewModel = viewModel()) {
     when (val s = screen) {
         is Screen.ArchiveDetail -> ArchiveDetailScreen(vm, s.shiftId)
         is Screen.JobDetail -> JobDetailScreen(vm, s.jobId, generation)
+        is Screen.ReviewDetail -> ReviewDetailScreen(vm, s.reviewId, generation)
+        Screen.NewReview -> NewReviewScreen(vm)
         Screen.BatchNotes -> BatchNotesScreen(vm)
         Screen.Handover -> HandoverScreen(vm)
         Screen.EndShift -> EndShiftScreen(vm)

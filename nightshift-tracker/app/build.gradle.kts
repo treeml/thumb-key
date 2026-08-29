@@ -13,8 +13,8 @@ android {
         applicationId = "com.nightshift.tracker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "4.0.1"
+        versionCode = 18
+        versionName = "4.1.0"
         vectorDrawables { useSupportLibrary = true }
     }
 

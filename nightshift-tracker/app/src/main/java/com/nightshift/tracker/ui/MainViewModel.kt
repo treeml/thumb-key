@@ -67,6 +67,12 @@ sealed interface Screen {
      * how you tap the wrong row.
      */
     data class JobDetail(val jobId: String) : Screen
+
+    /** One review, full screen — a form has no business inside a list. */
+    data class ReviewDetail(val reviewId: String) : Screen
+
+    /** Pick a presentation (or type your own) to start a review from. */
+    data object NewReview : Screen
 }
 
 sealed interface AiState {
@@ -157,7 +163,19 @@ class MainViewModel(
             undoSnackbar("Job deleted") { repo.restoreJob(job) }
         }
 
-    fun addReview() = viewModelScope.launch { activeShift.value?.let { repo.addReview(it.id) } }
+    fun addReview() =
+        viewModelScope.launch {
+            val shift = activeShift.value ?: return@launch
+            screen.value = Screen.ReviewDetail(repo.addReview(shift.id).id)
+        }
+
+    fun openReview(review: Review) {
+        screen.value = Screen.ReviewDetail(review.id)
+    }
+
+    fun openNewReview() {
+        screen.value = Screen.NewReview
+    }
 
     /**
      * Starts a review from a presentation template: it fills the reason, the
@@ -176,6 +194,7 @@ class MainViewModel(
                     templateKey = template.label,
                 ),
             )
+            screen.value = Screen.ReviewDetail(review.id)
         }
 
     /** Start a review from typed words when no template fits — nothing is lost. */
@@ -184,6 +203,7 @@ class MainViewModel(
             val shift = activeShift.value ?: return@launch
             val review = repo.addReview(shift.id)
             repo.updateReview(review.copy(reason = reason.trim()))
+            screen.value = Screen.ReviewDetail(review.id)
         }
 
     /** Push a live or expired timer out by [minutes] without retyping anything. */
@@ -393,6 +413,9 @@ class MainViewModel(
      *  surfaces — a ward round card, say — can send the user to it. */
     val activeTab = MutableStateFlow(0)
 
+    /** Index of the board within the shift's tabs — Centre sits in front of it. */
+    val BOARD_TAB = 1
+
     fun selectTab(index: Int) {
         activeTab.value = index
     }
@@ -451,7 +474,7 @@ class MainViewModel(
             val shift = activeShift.value ?: return@launch
             val trimmed = label.trim()
             openBedId.value = if (trimmed.isBlank()) null else repo.ensureBed(shift.id, trimmed).id
-            activeTab.value = 0
+            activeTab.value = BOARD_TAB
             captureSeed.value = ""
         }
 

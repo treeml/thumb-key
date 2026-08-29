@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,11 +42,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nightshift.tracker.data.Bed
 import com.nightshift.tracker.data.Job
+import com.nightshift.tracker.data.Review
 import com.nightshift.tracker.ui.MainViewModel
+import com.nightshift.tracker.ui.board.BoardItem
+import com.nightshift.tracker.ui.board.boardOrder
 import com.nightshift.tracker.ui.capture.CaptureBar
 import com.nightshift.tracker.ui.capture.bedLabel
 import com.nightshift.tracker.ui.components.ArmedDeleteButton
 import com.nightshift.tracker.ui.components.DbTextField
+import com.nightshift.tracker.ui.design.NsAction
 import com.nightshift.tracker.ui.design.NsChip
 import com.nightshift.tracker.ui.design.Radius
 import com.nightshift.tracker.ui.design.Space
@@ -54,6 +59,8 @@ import com.nightshift.tracker.ui.design.dueText
 import com.nightshift.tracker.ui.design.isOverdue
 import com.nightshift.tracker.ui.design.rememberNow
 import com.nightshift.tracker.ui.design.rememberTick
+import com.nightshift.tracker.ui.reviews.CompletedReviewRow
+import com.nightshift.tracker.ui.theme.Accent
 import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.RoutineGreen
 import com.nightshift.tracker.ui.theme.Surface1
@@ -66,7 +73,7 @@ import com.nightshift.tracker.ui.theme.UrgentRed
  * A plain string sort puts bed 10 before bed 2, which is exactly the kind of
  * small wrongness that makes a list feel untrustworthy on a round.
  */
-private fun bedRank(label: String): Pair<Int, String> {
+internal fun bedRank(label: String): Pair<Int, String> {
     val trimmed = label.trim()
     if (trimmed.isEmpty()) return Int.MAX_VALUE to ""
     val leadingNumber = trimmed.takeWhile { it.isDigit() }.toIntOrNull()
@@ -74,66 +81,45 @@ private fun bedRank(label: String): Pair<Int, String> {
 }
 
 /**
- * What needs doing next, top of the list.
+ * The board: everything outstanding, jobs and reviews together, under the bed
+ * it belongs to.
  *
- * Four bands, in the order a tired brain actually wants them:
- *   0  the clock has run out — longest overdue first
- *   1  flagged URGENT with no clock on it
- *   2  running against a clock — soonest due first
- *   3  everything else, by priority then by when it was written down
- */
-private fun jobOrder(jobs: List<Job>, now: Long): List<Job> =
-    jobs.sortedWith(
-        compareBy(
-            { job: Job ->
-                when {
-                    job.timerEndAt != null && job.timerEndAt <= now -> 0
-                    job.priority == 1 -> 1
-                    job.timerEndAt != null -> 2
-                    else -> 3
-                }
-            },
-            { it.timerEndAt ?: Long.MAX_VALUE },
-            { it.priority },
-            { it.createdAt },
-        ),
-    )
-
-/**
- * The board: one line per job, grouped under the bed it belongs to.
- *
- * There is no "add a bed" step any more. Beds appear because you wrote a job
- * for one — stopping to set up a bed before you can write down the thing you
- * are trying not to forget was backwards, and in practice simply went unused.
- *
- * Rows are deliberately one line each. Everything you can edit lives on the
- * job's own screen, one tap away, because a list you are scrolling while
- * typing is a list you mis-tap.
+ * They were on separate tabs, which meant the answer to "what have I still got
+ * on?" lived in two places and you had to remember to check the other one. A
+ * clinical review is a thing you have to do; so is chasing a potassium. The
+ * only real difference is what opens when you tap it.
  */
 @Composable
-fun JobsTab(
+fun BoardTab(
     vm: MainViewModel,
     generation: Int,
 ) {
     val jobs = vm.jobs.collectAsStateValue()
+    val reviews = vm.reviews.collectAsStateValue()
     val beds = vm.beds.collectAsStateValue()
     val seed = vm.captureSeed.collectAsStateValue()
     val target = vm.captureTarget.collectAsStateValue()
     // Ticks, so the board re-sorts itself as deadlines come round.
     val now = rememberNow()
 
-    val open = jobs.filter { it.status != 2 }
-    val completed = jobs.filter { it.status == 2 }
+    val items =
+        jobs.filter { it.status != 2 }.map { BoardItem.JobItem(it) } +
+            reviews.filter { !it.done }.map { BoardItem.ReviewItem(it) }
+    val doneJobs = jobs.filter { it.status == 2 }
+    val doneReviews = reviews.filter { it.done }
+    val doneCount = doneJobs.size + doneReviews.size
+
     var showCompleted by rememberSaveable { mutableStateOf(false) }
     var editingBed by remember { mutableStateOf<Bed?>(null) }
 
-    // A bed with nothing left on it has served its purpose; hide it rather than
-    // leave the board full of finished patients.
-    val liveBeds =
-        beds
-            .filter { bed -> open.any { it.bedId == bed.id } }
-            .sortedWith(compareBy({ bedRank(it.label).first }, { bedRank(it.label).second }))
-    val unassigned = open.filter { it.bedId == null }
+    // Group by the bed text itself rather than by a bed row, so a review that
+    // only ever had "56" typed into it still files under bed 56.
+    val grouped = items.groupBy { it.bedText.trim().uppercase() }
+    val bedGroups =
+        grouped.keys
+            .filter { it.isNotBlank() }
+            .sortedWith(compareBy({ bedRank(it).first }, { bedRank(it).second }))
+    val loose = grouped[""].orEmpty()
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -142,7 +128,21 @@ fun JobsTab(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (open.isEmpty()) {
+                item(key = "new-review") {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    ) {
+                        NsAction(
+                            label = "Review",
+                            onClick = { vm.openNewReview() },
+                            icon = Icons.Filled.Add,
+                            tone = Accent,
+                        )
+                    }
+                }
+
+                if (items.isEmpty()) {
                     item {
                         Text(
                             "Nothing on the list.\n\nType it all into one line below — " +
@@ -155,43 +155,46 @@ fun JobsTab(
                     }
                 }
 
-                liveBeds.forEach { bed ->
-                    val bedJobs = open.filter { it.bedId == bed.id }
-                    item(key = "bed-${bed.id}") {
+                bedGroups.forEach { key ->
+                    val groupItems = grouped[key].orEmpty()
+                    val bed = beds.firstOrNull { it.label.trim().equals(key, ignoreCase = true) }
+                    item(key = "bed-$key") {
                         BedHeader(
+                            label = groupItems.first().bedText,
                             bed = bed,
-                            jobs = bedJobs,
+                            items = groupItems,
                             now = now,
-                            onEdit = { editingBed = bed },
+                            onEdit = { bed?.let { editingBed = it } },
                         )
                     }
-                    items(jobOrder(bedJobs, now), key = { it.id }) { job ->
-                        JobRow(job = job, vm = vm, now = now)
+                    items(boardOrder(groupItems, now), key = { it.key }) { item ->
+                        BoardRow(item = item, vm = vm, now = now)
                     }
                 }
 
-                if (unassigned.isNotEmpty()) {
-                    item(key = "unassigned-header") {
-                        GroupHeading("NO BED (${unassigned.size})")
-                    }
-                    items(jobOrder(unassigned, now), key = { it.id }) { job ->
-                        JobRow(job = job, vm = vm, now = now)
+                if (loose.isNotEmpty()) {
+                    item(key = "loose-header") { GroupHeading("NO BED (${loose.size})") }
+                    items(boardOrder(loose, now), key = { it.key }) { item ->
+                        BoardRow(item = item, vm = vm, now = now)
                     }
                 }
 
-                if (completed.isNotEmpty()) {
+                if (doneCount > 0) {
                     item(key = "completed-drawer") {
                         Box(Modifier.padding(top = 12.dp)) {
                             CompletedDrawerHeader(
-                                title = "Completed (${completed.size})",
+                                title = "Completed ($doneCount)",
                                 expanded = showCompleted,
                                 onToggle = { showCompleted = !showCompleted },
                             )
                         }
                     }
                     if (showCompleted) {
-                        items(completed, key = { "done-${it.id}" }) { job ->
+                        items(doneJobs, key = { "done-job-${it.id}" }) { job ->
                             CompletedJobRow(job = job, vm = vm)
+                        }
+                        items(doneReviews, key = { "done-rev-${it.id}" }) { review ->
+                            CompletedReviewRow(review = review, vm = vm)
                         }
                     }
                 }
@@ -236,15 +239,16 @@ private fun GroupHeading(text: String) {
  */
 @Composable
 private fun BedHeader(
-    bed: Bed,
-    jobs: List<Job>,
+    label: String,
+    bed: Bed?,
+    items: List<BoardItem>,
     now: Long,
     onEdit: () -> Unit,
 ) {
-    val overdue = jobs.count { isOverdue(it.timerEndAt, now) }
-    val urgent = jobs.count { it.priority == 1 }
+    val overdue = items.count { isOverdue(it.dueAt, now) }
+    val urgent = items.count { it.priority == 1 }
     val who =
-        listOf(bed.patientName, bed.mrn).filter { it.isNotBlank() }.joinToString(" · ")
+        listOfNotNull(bed?.patientName, bed?.mrn).filter { it.isNotBlank() }.joinToString(" · ")
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -253,11 +257,11 @@ private fun BedHeader(
             Modifier
                 .fillMaxWidth()
                 .padding(top = 12.dp)
-                .clickable(onClick = onEdit)
+                .clickable(enabled = bed != null, onClick = onEdit)
                 .padding(start = 6.dp, end = 6.dp, bottom = 2.dp),
     ) {
         Text(
-            bedLabel(bed.label),
+            bedLabel(label),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -280,23 +284,23 @@ private fun BedHeader(
 }
 
 /**
- * One job, one line.
+ * One outstanding thing, one line — job or review.
  *
  * Swipe left to finish, swipe right to flag urgent (and again to put it back).
- * Tap opens it full screen — nothing is editable here, which is the point: this
- * list is for reading and for scrolling past, not for typing into.
+ * Tap opens it full screen. Nothing is editable here, which is the point: this
+ * list is for reading and scrolling past, not for typing into.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun JobRow(
-    job: Job,
+private fun BoardRow(
+    item: BoardItem,
     vm: MainViewModel,
     now: Long,
 ) {
     val tick = rememberTick()
-    val due = job.timerEndAt
+    val due = item.dueAt
     val overdue = isOverdue(due, now)
-    val urgency = dueColor(due, job.priority, now)
+    val urgency = dueColor(due, item.priority, now)
 
     val dismiss =
         rememberSwipeToDismissBoxState(
@@ -304,12 +308,19 @@ private fun JobRow(
                 when (value) {
                     SwipeToDismissBoxValue.EndToStart -> {
                         tick()
-                        vm.completeJob(job)
+                        when (item) {
+                            is BoardItem.JobItem -> vm.completeJob(item.job)
+                            is BoardItem.ReviewItem -> vm.completeReview(item.review)
+                        }
                         true
                     }
                     SwipeToDismissBoxValue.StartToEnd -> {
                         tick()
-                        vm.updateJob(job.copy(priority = if (job.priority == 1) 2 else 1))
+                        val flipped = if (item.priority == 1) 2 else 1
+                        when (item) {
+                            is BoardItem.JobItem -> vm.updateJob(item.job.copy(priority = flipped))
+                            is BoardItem.ReviewItem -> vm.updateReview(item.review.copy(priority = flipped))
+                        }
                         false
                     }
                     SwipeToDismissBoxValue.Settled -> false
@@ -319,7 +330,7 @@ private fun JobRow(
 
     SwipeToDismissBox(
         state = dismiss,
-        backgroundContent = { SwipeBackdrop(dismiss.dismissDirection, job.priority) },
+        backgroundContent = { SwipeBackdrop(dismiss.dismissDirection, item.priority) },
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -330,8 +341,12 @@ private fun JobRow(
                     .background(
                         if (due != null) urgency.copy(alpha = 0.10f) else Surface1,
                         RoundedCornerShape(Radius.sm),
-                    ).clickable { vm.openJob(job) }
-                    .padding(horizontal = 10.dp, vertical = 10.dp),
+                    ).clickable {
+                        when (item) {
+                            is BoardItem.JobItem -> vm.openJob(item.job)
+                            is BoardItem.ReviewItem -> vm.openReview(item.review)
+                        }
+                    }.padding(horizontal = 10.dp, vertical = 10.dp),
         ) {
             Box(
                 Modifier
@@ -339,14 +354,19 @@ private fun JobRow(
                     .height(20.dp)
                     .background(urgency, RoundedCornerShape(2.dp)),
             )
+            if (item is BoardItem.ReviewItem) {
+                // The one thing that has to be obvious at a glance: this is a
+                // patient to go and see, not a task to tick off.
+                NsChip("REVIEW", Accent)
+            }
             Text(
-                job.text.ifBlank { "New job" },
+                item.title,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (job.status == 1) {
+            if (item.inProgress) {
                 Text(
                     "···",
                     style = MaterialTheme.typography.labelSmall,
@@ -371,7 +391,7 @@ private fun JobRow(
     }
 }
 
-/** What sits behind a card mid-swipe, so the gesture says what it will do. */
+/** What sits behind a row mid-swipe, so the gesture says what it will do. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SwipeBackdrop(

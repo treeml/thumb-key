@@ -31,18 +31,20 @@ import com.nightshift.tracker.ui.MainViewModel
 import com.nightshift.tracker.ui.Screen
 import com.nightshift.tracker.ui.guides.GuidesTab
 import com.nightshift.tracker.ui.guides.UroLearnTab
-import com.nightshift.tracker.ui.jobs.JobsTab
+import com.nightshift.tracker.ui.jobs.BoardTab
 import com.nightshift.tracker.ui.jobs.collectAsStateValue
 import com.nightshift.tracker.ui.learn.QuestionCaptureDialog
-import com.nightshift.tracker.ui.reviews.ReviewsTab
 import com.nightshift.tracker.ui.rounds.RoundsTab
 import com.nightshift.tracker.ui.theme.Ink
 
+// Centre first, and it is where you land: the board answers "show me
+// everything", the centre answers "what now", and the second question is the
+// one you actually ask when you pick the phone up.
 private val tabTitles =
     if (BuildConfig.URO) {
-        listOf("Jobs", "Rounds", "Reviews", "Learn")
+        listOf("Centre", "Board", "Rounds", "Learn")
     } else {
-        listOf("Jobs", "Reviews", "Guides")
+        listOf("Centre", "Board", "Guides")
     }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,8 +52,6 @@ private val tabTitles =
 fun ShiftScreen(vm: MainViewModel) {
     val shift = vm.activeShift.collectAsStateValue() ?: return
     val generation = vm.dataGeneration.collectAsStateValue()
-    val jobs = vm.jobs.collectAsStateValue()
-    val reviews = vm.reviews.collectAsStateValue()
     // Held in the ViewModel so other surfaces can jump here (e.g. "+ Job" on a
     // ward round card lands on Jobs with the bed already typed).
     val tab = vm.activeTab.collectAsStateValue().coerceIn(0, tabTitles.lastIndex)
@@ -94,12 +94,6 @@ fun ShiftScreen(vm: MainViewModel) {
                 .consumeWindowInsets(padding)
                 .imePadding(),
         ) {
-            PulseStrip(
-                shift = shift,
-                jobs = jobs,
-                reviews = reviews,
-                onBreak = { vm.recordBreak() },
-            )
             TabRow(selectedTabIndex = tab, containerColor = Ink) {
                 tabTitles.forEachIndexed { index, title ->
                     Tab(
@@ -110,9 +104,9 @@ fun ShiftScreen(vm: MainViewModel) {
                 }
             }
             when (tabTitles[tab]) {
-                "Jobs" -> JobsTab(vm, generation)
+                "Centre" -> CommandCentre(vm, onOpenBoard = { vm.selectTab(vm.BOARD_TAB) })
+                "Board" -> BoardTab(vm, generation)
                 "Rounds" -> RoundsTab(vm, generation)
-                "Reviews" -> ReviewsTab(vm, generation)
                 "Learn" -> UroLearnTab(vm)
                 else -> GuidesTab(vm)
             }
