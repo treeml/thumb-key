@@ -259,21 +259,6 @@ fun ReviewDetailScreen(
                         back()
                     },
                 )
-                // Done: card moves to the Completed drawer, retrievable there.
-                Box(
-                    Modifier
-                        .defaultMinSize(minHeight = 48.dp)
-                        .background(RoutineGreen.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
-                        .border(1.dp, RoutineGreen.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
-                        .clickable {
-                            vm.completeReview(review)
-                            back()
-                        }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("Done ✓", style = MaterialTheme.typography.labelLarge, color = RoutineGreen)
-                }
             }
 
             if (escalated) {
@@ -325,6 +310,20 @@ fun ReviewDetailScreen(
                     }
                 }
             }
+            // No Done button, on purpose: it sat where a thumb lands to close
+            // the screen, so finishing a review you were only reading took one
+            // mis-tap. Closing is now the safe thing under your thumb.
+            Text(
+                "Swipe this left on the board to finish it.",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+            )
+            NsAction(
+                label = "Close",
+                onClick = back,
+                haptic = false,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(Modifier.height(24.dp))
         }
     }

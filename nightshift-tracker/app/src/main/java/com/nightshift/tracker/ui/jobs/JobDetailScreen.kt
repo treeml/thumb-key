@@ -44,7 +44,7 @@ import com.nightshift.tracker.ui.design.Space
 import com.nightshift.tracker.ui.design.dueColor
 import com.nightshift.tracker.ui.design.dueText
 import com.nightshift.tracker.ui.theme.Ink
-import com.nightshift.tracker.ui.theme.RoutineGreen
+import com.nightshift.tracker.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 
 /**
@@ -153,6 +153,18 @@ fun JobDetailScreen(
 
             Spacer(Modifier.weight(1f))
 
+            // No Done button here, on purpose. It used to sit exactly where a
+            // thumb lands to close the screen, so finishing a job you were only
+            // reading was a single mis-tap. Swiping is a deliberate gesture and
+            // cannot be done by accident; closing is now the safe thing under
+            // your thumb, and finishing costs a swipe on the board.
+            Text(
+                "Swipe this left on the board to finish it.",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+                modifier = Modifier.padding(bottom = Space.sm),
+            )
+
             HandedActions(
                 modifier = Modifier.padding(bottom = Space.lg),
                 secondary = {
@@ -165,13 +177,9 @@ fun JobDetailScreen(
                 },
                 primary = {
                     NsAction(
-                        label = "Done",
-                        onClick = {
-                            vm.completeJob(job)
-                            back()
-                        },
-                        tone = RoutineGreen,
-                        filled = true,
+                        label = "Close",
+                        onClick = back,
+                        haptic = false,
                     )
                 },
             )
