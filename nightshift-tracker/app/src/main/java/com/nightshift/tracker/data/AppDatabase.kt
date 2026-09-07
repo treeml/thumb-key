@@ -16,8 +16,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Bed::class,
         ProcedureLog::class,
         LearningItem::class,
+        Photo::class,
     ],
-    version = 8,
+    version = 9,
     // Off deliberately: KSP args are global rather than per-flavor, so two
     // flavors exporting schemas in one build race on the same file. Room still
     // validates the hand-written migrations against the entities at runtime.
@@ -37,6 +38,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun procedureDao(): ProcedureDao
 
     abstract fun learningDao(): LearningDao
+
+    abstract fun photoDao(): PhotoDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
@@ -142,6 +145,20 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        // v9: photos attached to a round or a review. Purely additive; the
+        // images themselves live as files in app-private storage, not in here.
+        private val MIGRATION_8_9 =
+            object : Migration(8, 9) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `photos` (" +
+                            "`id` TEXT NOT NULL, `ownerId` TEXT NOT NULL, `fileName` TEXT NOT NULL, " +
+                            "`caption` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+                    )
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_photos_ownerId` ON `photos` (`ownerId`)")
+                }
+            }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room
@@ -160,6 +177,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7,
                         MIGRATION_7_8,
+                        MIGRATION_8_9,
                     )
                     // No destructive fallback — an app update must never wipe data.
                     .build()

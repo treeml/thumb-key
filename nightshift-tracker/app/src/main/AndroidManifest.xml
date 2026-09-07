@@ -27,9 +27,15 @@
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
+    <!-- Cloud backup off. The brief for this app was that everything stays on
+         the device with no cloud and no accounts, and allowBackup="true" quietly
+         broke that: Android's auto-backup ships app data, now including clinical
+         photos, to the user's Google account. Moving a phone is what the app's
+         own Export backup is for. -->
     <application
         android:name=".NightshiftApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"

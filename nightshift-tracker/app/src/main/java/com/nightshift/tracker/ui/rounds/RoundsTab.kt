@@ -45,6 +45,7 @@ import com.nightshift.tracker.ui.components.ArmedDeleteButton
 import com.nightshift.tracker.ui.components.DbTextField
 import com.nightshift.tracker.ui.components.PriorityPicker
 import com.nightshift.tracker.ui.design.NsAction
+import com.nightshift.tracker.ui.photos.PhotoStrip
 import com.nightshift.tracker.ui.design.fabAlignment
 import com.nightshift.tracker.ui.jobs.CompletedDrawerHeader
 import com.nightshift.tracker.ui.settings.leftHanded
@@ -367,6 +368,8 @@ private fun RoundCard(
                     generation = generation,
                     onCommit = { vm.updateRound(round.copy(plan = it)) },
                 )
+                PhotoStrip(ownerId = round.id, vm = vm, generation = generation)
+
                 PriorityPicker(selected = round.priority, onSelect = { vm.updateRound(round.copy(priority = it)) })
 
                 Row(

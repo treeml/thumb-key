@@ -1,6 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- UroDay only: network access for the opt-in Claude note-tidy feature.
-         The Nightshift flavor's manifest has no INTERNET permission. -->
+         The Nightshift flavor's manifest has no INTERNET permission.
+
+         Note there is deliberately no CAMERA permission. Photos are taken by
+         handing the system camera app a write URI for one file, which needs no
+         permission of ours — and declaring CAMERA would start requiring one. -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <application>
+        <!-- Lets the camera app write into ONE file in the app's private photo
+             directory, and nothing else. UroDay only: the Nightshift flavor has
+             no photo feature and so no provider. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.photos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/photo_paths" />
+        </provider>
+    </application>
 </manifest>

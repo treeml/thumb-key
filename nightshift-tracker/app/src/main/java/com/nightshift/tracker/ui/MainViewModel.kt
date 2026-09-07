@@ -14,6 +14,7 @@ import com.nightshift.tracker.ai.deidentify
 import com.nightshift.tracker.data.Bed
 import com.nightshift.tracker.data.Job
 import com.nightshift.tracker.data.LearningItem
+import com.nightshift.tracker.data.Photo
 import com.nightshift.tracker.data.ProcedureLog
 import com.nightshift.tracker.data.Review
 import com.nightshift.tracker.data.Shift
@@ -24,6 +25,7 @@ import com.nightshift.tracker.ui.handover.buildHandover
 import com.nightshift.tracker.ui.reviews.ReviewTemplate
 import com.nightshift.tracker.ui.rounds.buildRoundNote
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
@@ -655,6 +657,27 @@ class MainViewModel(
         viewModelScope.launch {
             repo.deleteLearning(item)
             undoSnackbar("Question deleted") { repo.restoreLearning(item) }
+        }
+
+    // ---- Photos (UroDay) ----
+
+    /**
+     * The photos on one round or review. Per-owner rather than a single shared
+     * list because a card only ever wants its own, and a photo is expensive
+     * enough to decode that handing every card the whole set would be wasteful.
+     */
+    fun photosFor(ownerId: String): Flow<List<Photo>> = repo.photoDao.forOwner(ownerId)
+
+    fun attachPhoto(ownerId: String, fileName: String) =
+        viewModelScope.launch { repo.addPhoto(ownerId, fileName) }
+
+    fun setPhotoCaption(photo: Photo, caption: String) =
+        viewModelScope.launch { repo.updatePhoto(photo.copy(caption = caption)) }
+
+    fun deletePhotoWithUndo(photo: Photo) =
+        viewModelScope.launch {
+            repo.deletePhoto(photo)
+            undoSnackbar("Photo deleted") { repo.restorePhoto(photo) }
         }
 
     fun deleteArchivedShiftWithUndo(shift: Shift) =

@@ -24,6 +24,7 @@ class Repository(
     val bedDao get() = db.bedDao()
     val procedureDao get() = db.procedureDao()
     val learningDao get() = db.learningDao()
+    val photoDao get() = db.photoDao()
 
     private suspend fun <T> commit(block: suspend () -> T): T {
         val result = block()
@@ -64,13 +65,17 @@ class Repository(
 
     suspend fun deleteShiftCascade(shift: Shift): ShiftSnapshot =
         commit {
+            val reviews = reviewDao.forShiftOnce(shift.id)
+            val rounds = wardRoundDao.forShiftOnce(shift.id)
+            val owners = (reviews.map { it.id } + rounds.map { it.id }).toSet()
             val snapshot =
                 ShiftSnapshot(
                     shift = shift,
                     jobs = jobDao.forShiftOnce(shift.id),
-                    reviews = reviewDao.forShiftOnce(shift.id),
-                    rounds = wardRoundDao.forShiftOnce(shift.id),
+                    reviews = reviews,
+                    rounds = rounds,
                     beds = bedDao.forShiftOnce(shift.id),
+                    photos = photoDao.allOnce().filter { it.ownerId in owners },
                 )
             snapshot.jobs.forEach {
                 if (it.timerEndAt != null) TimerAlarms.cancel(context, it.id)
@@ -82,6 +87,7 @@ class Repository(
             }
             snapshot.rounds.forEach { wardRoundDao.delete(it.id) }
             snapshot.beds.forEach { bedDao.delete(it.id) }
+            snapshot.photos.forEach { photoDao.delete(it.id) }
             shiftDao.delete(shift.id)
             snapshot
         }
@@ -105,6 +111,7 @@ class Repository(
                 }
             }
             data.rounds.forEach { wardRoundDao.upsert(it) }
+            data.photos.forEach { photoDao.upsert(it) }
         }
 
     // ---- Beds ----
@@ -245,6 +252,7 @@ class Repository(
     suspend fun deleteReview(review: Review) =
         commit {
             if (review.remindAt != null) TimerAlarms.cancel(context, review.id)
+            photoDao.forOwnerOnce(review.id).forEach { photoDao.delete(it.id) }
             reviewDao.delete(review.id)
         }
 
@@ -269,7 +277,11 @@ class Repository(
 
     suspend fun updateRound(round: WardRound) = commit { wardRoundDao.upsert(round) }
 
-    suspend fun deleteRound(round: WardRound) = commit { wardRoundDao.delete(round.id) }
+    suspend fun deleteRound(round: WardRound) =
+        commit {
+            photoDao.forOwnerOnce(round.id).forEach { photoDao.delete(it.id) }
+            wardRoundDao.delete(round.id)
+        }
 
     suspend fun restoreRound(round: WardRound) = commit { wardRoundDao.upsert(round) }
 
@@ -333,4 +345,38 @@ class Repository(
     suspend fun deleteLearning(item: LearningItem) = commit { learningDao.delete(item.id) }
 
     suspend fun restoreLearning(item: LearningItem) = commit { learningDao.upsert(item) }
+
+    // ---- Photos ----
+
+    /**
+     * Record a photo the camera has already written into app-private storage.
+     * The file is shrunk here rather than at capture time so the camera app
+     * hands control back immediately.
+     */
+    suspend fun addPhoto(ownerId: String, fileName: String): Photo =
+        commit {
+            PhotoStore.compress(context, fileName)
+            val photo =
+                Photo(
+                    id = UUID.randomUUID().toString(),
+                    ownerId = ownerId,
+                    fileName = fileName,
+                    createdAt = System.currentTimeMillis(),
+                )
+            photoDao.upsert(photo)
+            photo
+        }
+
+    suspend fun updatePhoto(photo: Photo) = commit { photoDao.upsert(photo) }
+
+    /**
+     * Drop the row now, leave the file for the sweeper.
+     *
+     * Undo has to be able to put the picture back, and it cannot do that if the
+     * bytes went with the row. PhotoStore.sweepOrphans clears anything still
+     * unreferenced a day later.
+     */
+    suspend fun deletePhoto(photo: Photo) = commit { photoDao.delete(photo.id) }
+
+    suspend fun restorePhoto(photo: Photo) = commit { photoDao.upsert(photo) }
 }

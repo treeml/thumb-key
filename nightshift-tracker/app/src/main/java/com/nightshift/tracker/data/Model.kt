@@ -187,6 +187,27 @@ data class LearningItem(
     val starred: Boolean = false,
 )
 
+/**
+ * A photo attached to a ward round entry or a review — a wound, a stoma, a
+ * catheter bag, a rash.
+ *
+ * Only the file NAME is stored. The image itself lives in the app's private
+ * storage, never in the phone's gallery, so it is not picked up by Google
+ * Photos, does not appear in the camera roll, and goes when the app goes.
+ */
+@Entity(
+    tableName = "photos",
+    indices = [Index("ownerId")],
+)
+data class Photo(
+    @PrimaryKey val id: String,
+    /** The round or review this belongs to. */
+    val ownerId: String,
+    val fileName: String,
+    val caption: String = "",
+    val createdAt: Long,
+)
+
 /** Whole-database snapshot used for JSON auto-backup, export and import. */
 data class BackupPayload(
     val app: String = "nightshift-tracker",
@@ -199,6 +220,14 @@ data class BackupPayload(
     val beds: List<Bed> = emptyList(),
     val procedures: List<ProcedureLog> = emptyList(),
     val learning: List<LearningItem> = emptyList(),
+    /**
+     * Photo records travel in the backup so captions and attachments survive a
+     * restore, but the image FILES do not — they would bloat a rotating JSON
+     * backup past any sane size. A restore onto a device that still has the
+     * files relinks them; anywhere else the attachment shows as missing rather
+     * than silently disappearing.
+     */
+    val photos: List<Photo> = emptyList(),
 )
 
 /** Full contents of one shift, used for cascade delete/undo and archive view. */
@@ -208,4 +237,5 @@ data class ShiftSnapshot(
     val reviews: List<Review>,
     val rounds: List<WardRound>,
     val beds: List<Bed> = emptyList(),
+    val photos: List<Photo> = emptyList(),
 )

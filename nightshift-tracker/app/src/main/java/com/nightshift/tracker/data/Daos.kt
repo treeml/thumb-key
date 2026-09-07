@@ -150,3 +150,21 @@ interface LearningDao {
     @Query("SELECT * FROM learning_items")
     suspend fun allOnce(): List<LearningItem>
 }
+
+@Dao
+interface PhotoDao {
+    @Query("SELECT * FROM photos WHERE ownerId = :ownerId ORDER BY createdAt")
+    fun forOwner(ownerId: String): Flow<List<Photo>>
+
+    @Query("SELECT * FROM photos WHERE ownerId = :ownerId ORDER BY createdAt")
+    suspend fun forOwnerOnce(ownerId: String): List<Photo>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(photo: Photo)
+
+    @Query("DELETE FROM photos WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("SELECT * FROM photos")
+    suspend fun allOnce(): List<Photo>
+}

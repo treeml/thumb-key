@@ -59,6 +59,7 @@ import com.nightshift.tracker.ui.design.dueColor
 import com.nightshift.tracker.ui.design.dueText
 import com.nightshift.tracker.ui.design.isOverdue
 import com.nightshift.tracker.ui.jobs.collectAsStateValue
+import com.nightshift.tracker.ui.photos.PhotoStrip
 import com.nightshift.tracker.ui.theme.Ink
 import com.nightshift.tracker.ui.theme.RoutineGreen
 import com.nightshift.tracker.ui.theme.TextSecondary
@@ -310,6 +311,8 @@ fun ReviewDetailScreen(
                     }
                 }
             }
+            PhotoStrip(ownerId = review.id, vm = vm, generation = generation)
+
             // No Done button, on purpose: it sat where a thumb lands to close
             // the screen, so finishing a review you were only reading took one
             // mis-tap. Closing is now the safe thing under your thumb.

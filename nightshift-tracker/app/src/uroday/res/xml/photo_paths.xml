@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The camera app is handed a URI for one file at a time inside this directory.
+  Nothing else in the app's storage is reachable through the provider, and the
+  directory itself is app-private: it is not the camera roll and never touches
+  MediaStore.
+-->
+<paths>
+    <files-path
+        name="clinical_photos"
+        path="photos/" />
+</paths>

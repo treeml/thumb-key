@@ -59,6 +59,7 @@ class BackupManager(
                 beds = db.bedDao().allOnce(),
                 procedures = db.procedureDao().allOnce(),
                 learning = db.learningDao().allOnce(),
+                photos = db.photoDao().allOnce(),
             )
         return gson.toJson(payload)
     }
@@ -148,6 +149,14 @@ class BackupManager(
                 @Suppress("USELESS_ELVIS")
                 val learning: List<LearningItem> = payload.learning ?: emptyList()
 
+                // Records only. The image files are not in the JSON — a rotating
+                // backup carrying base64 photos would be enormous — so a restore
+                // onto this device relinks whatever files are still there, and
+                // anywhere else the attachment reads as missing rather than
+                // vanishing without trace.
+                @Suppress("USELESS_ELVIS")
+                val photos: List<Photo> = payload.photos ?: emptyList()
+
                 // Safety net before we touch anything.
                 for (dir in backupDirs()) {
                     atomicWrite(
@@ -158,6 +167,7 @@ class BackupManager(
 
                 db.runInTransaction {
                     // runInTransaction is not suspend-friendly; use raw deletes.
+                    db.openHelper.writableDatabase.execSQL("DELETE FROM photos")
                     db.openHelper.writableDatabase.execSQL("DELETE FROM learning_items")
                     db.openHelper.writableDatabase.execSQL("DELETE FROM procedures")
                     db.openHelper.writableDatabase.execSQL("DELETE FROM beds")
@@ -173,6 +183,7 @@ class BackupManager(
                 rounds.forEach { db.wardRoundDao().upsert(it) }
                 procedures.forEach { db.procedureDao().upsert(it) }
                 learning.forEach { db.learningDao().upsert(it) }
+                photos.forEach { db.photoDao().upsert(it) }
                 scheduleBackup()
                 "Restored ${shifts.size} shifts, ${jobs.size} jobs, ${reviews.size} reviews, " +
                     "${rounds.size} rounds, ${procedures.size} procedures, ${learning.size} questions"
