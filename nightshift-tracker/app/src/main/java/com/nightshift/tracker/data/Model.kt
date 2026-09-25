@@ -36,6 +36,14 @@ data class Bed(
     /** Initials or a name — whatever came out of the capture bar. */
     val patientName: String = "",
     val mrn: String = "",
+    /**
+     * The patient you keep thinking about.
+     *
+     * Not a priority — priority is about a single task. This is about a person:
+     * the one whose obs you want to look at again before you sit down, who you
+     * would mention first if someone asked how the shift was going.
+     */
+    val watch: Boolean = false,
     val createdAt: Long,
 )
 

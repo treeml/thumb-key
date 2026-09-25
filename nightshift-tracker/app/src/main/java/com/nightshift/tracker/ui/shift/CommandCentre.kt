@@ -11,13 +11,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -65,6 +69,7 @@ fun CommandCentre(
     val shift = vm.activeShift.collectAsStateValue() ?: return
     val jobs = vm.jobs.collectAsStateValue()
     val reviews = vm.reviews.collectAsStateValue()
+    val beds = vm.beds.collectAsStateValue()
     val now = rememberNow(10_000L)
 
     val items =
@@ -90,6 +95,22 @@ fun CommandCentre(
                 Stat("$overdue", "overdue", if (overdue > 0) UrgentRed else TextSecondary, onOpenBoard, Modifier.weight(1f))
                 Stat("$urgent", "urgent", if (urgent > 0) UrgentRed else TextSecondary, onOpenBoard, Modifier.weight(1f))
                 Stat("$openReviews", "reviews", if (openReviews > 0) SoonYellow else TextSecondary, onOpenBoard, Modifier.weight(1f))
+            }
+        }
+
+        val watched = beds.filter { it.watch }
+        if (watched.isNotEmpty()) {
+            item { SectionLabel("WATCHING") }
+            items(watched.size) { i ->
+                val bed = watched[i]
+                val key = bed.label.trim().uppercase()
+                val theirs = items.filter { it.bedText.trim().uppercase() == key }
+                WatchRow(
+                    bed = bed,
+                    outstanding = theirs.size,
+                    overdue = theirs.count { isOverdue(it.dueAt, now) },
+                    onClick = onOpenBoard,
+                )
             }
         }
 
@@ -155,6 +176,12 @@ fun CommandCentre(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                NsAction(
+                    label = "Export the whole shift",
+                    onClick = { vm.openShiftExport() },
+                    icon = Icons.Filled.Share,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }
@@ -195,6 +222,51 @@ private fun ClockCard(
             },
             style = MaterialTheme.typography.bodyMedium,
             color = if (breakOverdue) SoonYellow else TextSecondary,
+        )
+    }
+}
+
+/** A patient you flagged: who, where, and how much is still open on them. */
+@Composable
+private fun WatchRow(
+    bed: com.nightshift.tracker.data.Bed,
+    outstanding: Int,
+    overdue: Int,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Space.sm),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .background(SoonYellow.copy(alpha = 0.08f), RoundedCornerShape(Radius.sm))
+                .border(1.dp, SoonYellow.copy(alpha = 0.35f), RoundedCornerShape(Radius.sm))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Icon(Icons.Filled.Star, contentDescription = null, tint = SoonYellow, modifier = Modifier.size(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(bedLabel(bed.label), style = MaterialTheme.typography.bodyMedium)
+            val who = listOf(bed.patientName, bed.mrn).filter { it.isNotBlank() }.joinToString(" · ")
+            if (who.isNotBlank()) {
+                Text(
+                    who,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Text(
+            when {
+                overdue > 0 -> "$overdue overdue"
+                outstanding > 0 -> "$outstanding open"
+                else -> "nothing open"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = if (overdue > 0) UrgentRed else TextSecondary,
         )
     }
 }

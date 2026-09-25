@@ -273,13 +273,22 @@ fun ReviewDetailScreen(
                 )
             }
 
-            // DHR note generator — appears once there's something to write.
+            // Note generators — appear once there's something to write.
+            //
+            // Two formats, chosen at export rather than at writing time. DHR is
+            // how an overnight review goes into the hospital record; SOAP is
+            // what a scribe or any other app expects to be handed.
             if (review.impression.isNotBlank() || review.plan.isNotBlank()) {
                 NsAction(
-                    label = if (AiFactory.AVAILABLE) "Open note — tidy, copy or email" else "Open note — copy or email",
-                    onClick = {
-                        vm.openNoteReview(buildDhrNote(review), "Clinical review note")
-                    },
+                    label = "Note (SOAP) — send to another app",
+                    onClick = { vm.openNoteReview(buildSoapNote(review), "Clinical review (SOAP)") },
+                    tone = MaterialTheme.colorScheme.primary,
+                    filled = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                NsAction(
+                    label = if (AiFactory.AVAILABLE) "Note (DHR) — tidy, copy or send" else "Note (DHR) — copy or send",
+                    onClick = { vm.openNoteReview(buildDhrNote(review), "Clinical review note") },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

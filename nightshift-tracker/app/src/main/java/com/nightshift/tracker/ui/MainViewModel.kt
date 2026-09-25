@@ -23,6 +23,7 @@ import com.nightshift.tracker.data.WardRound
 import com.nightshift.tracker.ui.capture.parseCapture
 import com.nightshift.tracker.ui.handover.buildHandover
 import com.nightshift.tracker.ui.reviews.ReviewTemplate
+import com.nightshift.tracker.ui.shift.buildShiftExport
 import com.nightshift.tracker.ui.rounds.buildRoundNote
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -463,6 +464,9 @@ class MainViewModel(
 
     fun updateBed(bed: Bed) = viewModelScope.launch { repo.updateBed(bed) }
 
+    /** One tap from the bed heading — the flag has to be cheaper than the worry. */
+    fun toggleWatch(bed: Bed) = viewModelScope.launch { repo.updateBed(bed.copy(watch = !bed.watch)) }
+
     fun deleteBedWithUndo(bed: Bed) =
         viewModelScope.launch {
             val orphaned = repo.deleteBed(bed)
@@ -560,6 +564,19 @@ class MainViewModel(
     // ---- Handover ----
 
     val handoverText = MutableStateFlow("")
+
+    /**
+     * Everything on this shift as one shareable document. Organised by patient,
+     * reviews as SOAP, so it can be handed to a scribe, an inbox or a file
+     * without anyone having to reformat it.
+     */
+    fun openShiftExport() {
+        val shift = activeShift.value ?: return
+        openNoteReview(
+            buildShiftExport(shift, beds.value, jobs.value, reviews.value, rounds.value),
+            "Shift export",
+        )
+    }
 
     fun openHandover() {
         val shift = activeShift.value ?: return

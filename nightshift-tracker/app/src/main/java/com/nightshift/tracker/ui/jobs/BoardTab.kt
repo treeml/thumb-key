@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -63,6 +66,7 @@ import com.nightshift.tracker.ui.reviews.CompletedReviewRow
 import com.nightshift.tracker.ui.theme.Accent
 import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.RoutineGreen
+import com.nightshift.tracker.ui.theme.SoonYellow
 import com.nightshift.tracker.ui.theme.Surface1
 import com.nightshift.tracker.ui.theme.Surface2
 import com.nightshift.tracker.ui.theme.TextSecondary
@@ -111,6 +115,10 @@ fun BoardTab(
 
     var showCompleted by rememberSaveable { mutableStateOf(false) }
     var editingBed by remember { mutableStateOf<Bed?>(null) }
+    var watchOnly by rememberSaveable { mutableStateOf(false) }
+
+    val watchedLabels =
+        beds.filter { it.watch }.map { it.label.trim().uppercase() }.toSet()
 
     // Group by the bed text itself rather than by a bed row, so a review that
     // only ever had "56" typed into it still files under bed 56.
@@ -118,8 +126,17 @@ fun BoardTab(
     val bedGroups =
         grouped.keys
             .filter { it.isNotBlank() }
-            .sortedWith(compareBy({ bedRank(it).first }, { bedRank(it).second }))
-    val loose = grouped[""].orEmpty()
+            .filter { !watchOnly || it in watchedLabels }
+            .sortedWith(
+                // Watched beds first: the whole point of flagging someone is not
+                // having to go looking for them.
+                compareBy(
+                    { if (it in watchedLabels) 0 else 1 },
+                    { bedRank(it).first },
+                    { bedRank(it).second },
+                ),
+            )
+    val loose = if (watchOnly) emptyList() else grouped[""].orEmpty()
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -128,9 +145,10 @@ fun BoardTab(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                item(key = "new-review") {
+                item(key = "board-actions") {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(bottom = 4.dp),
                     ) {
                         NsAction(
@@ -139,6 +157,15 @@ fun BoardTab(
                             icon = Icons.Filled.Add,
                             tone = Accent,
                         )
+                        if (watchedLabels.isNotEmpty()) {
+                            NsAction(
+                                label = "Watching ${watchedLabels.size}",
+                                onClick = { watchOnly = !watchOnly },
+                                icon = if (watchOnly) Icons.Filled.Star else Icons.Filled.StarBorder,
+                                tone = SoonYellow,
+                                filled = watchOnly,
+                            )
+                        }
                     }
                 }
 
@@ -165,6 +192,7 @@ fun BoardTab(
                             items = groupItems,
                             now = now,
                             onEdit = { bed?.let { editingBed = it } },
+                            onToggleWatch = { bed?.let { vm.toggleWatch(it) } },
                         )
                     }
                     items(boardOrder(groupItems, now), key = { it.key }) { item ->
@@ -244,6 +272,7 @@ private fun BedHeader(
     items: List<BoardItem>,
     now: Long,
     onEdit: () -> Unit,
+    onToggleWatch: () -> Unit,
 ) {
     val overdue = items.count { isOverdue(it.dueAt, now) }
     val urgent = items.count { it.priority == 1 }
@@ -280,6 +309,18 @@ private fun BedHeader(
             overdue > 0 -> NsChip("$overdue overdue", UrgentRed, strong = true)
             urgent > 0 -> NsChip("$urgent urgent", UrgentRed)
         }
+        // One tap, on the heading itself. A worry you have to open a dialog to
+        // record is a worry that goes unrecorded.
+        Icon(
+            if (bed?.watch == true) Icons.Filled.Star else Icons.Filled.StarBorder,
+            contentDescription = if (bed?.watch == true) "Stop watching" else "Watch this patient",
+            tint = if (bed?.watch == true) SoonYellow else Outline,
+            modifier =
+                Modifier
+                    .size(34.dp)
+                    .clickable(enabled = bed != null, onClick = onToggleWatch)
+                    .padding(6.dp),
+        )
     }
 }
 

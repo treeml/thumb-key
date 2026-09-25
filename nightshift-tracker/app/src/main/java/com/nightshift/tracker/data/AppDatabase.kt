@@ -18,7 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LearningItem::class,
         Photo::class,
     ],
-    version = 9,
+    version = 10,
     // Off deliberately: KSP args are global rather than per-flavor, so two
     // flavors exporting schemas in one build race on the same file. Room still
     // validates the hand-written migrations against the entities at runtime.
@@ -159,6 +159,14 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        // v10: a bed can be flagged "watch". Additive.
+        private val MIGRATION_9_10 =
+            object : Migration(9, 10) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE beds ADD COLUMN watch INTEGER NOT NULL DEFAULT 0")
+                }
+            }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room
@@ -178,6 +186,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_6_7,
                         MIGRATION_7_8,
                         MIGRATION_8_9,
+                        MIGRATION_9_10,
                     )
                     // No destructive fallback — an app update must never wipe data.
                     .build()

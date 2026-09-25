@@ -207,7 +207,7 @@ fun BatchNotesScreen(vm: MainViewModel) {
                 }
                 Box(Modifier.weight(1f)) {
                     ActionButton(
-                        label = "Email notes",
+                        label = "Send to app",
                         icon = { tint ->
                             Icon(Icons.Filled.Email, null, tint = tint, modifier = Modifier.size(18.dp))
                         },
@@ -221,7 +221,12 @@ fun BatchNotesScreen(vm: MainViewModel) {
                                 putExtra(Intent.EXTRA_SUBJECT, "$subject — $date")
                                 putExtra(Intent.EXTRA_TEXT, text)
                             }
-                        context.startActivity(Intent.createChooser(send, "Email notes"))
+                        // A plain text/plain share, which is the only integration
+                        // point a sideloaded app actually has. Whatever on the
+                        // phone accepts shared text shows up here — a scribe, a
+                        // notes app, email, Files. Nothing is app-specific, so
+                        // nothing breaks when one of them changes.
+                        context.startActivity(Intent.createChooser(send, "Send note to"))
                     }
                 }
             }
