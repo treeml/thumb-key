@@ -317,9 +317,12 @@ private fun BedHeader(
             tint = if (bed?.watch == true) SoonYellow else Outline,
             modifier =
                 Modifier
-                    .size(34.dp)
+                    // 44dp of tappable area around a 20dp glyph. It sits right
+                    // next to the heading, which opens the bed dialog, so the
+                    // two need real separation or one becomes the other.
+                    .size(44.dp)
                     .clickable(enabled = bed != null, onClick = onToggleWatch)
-                    .padding(6.dp),
+                    .padding(12.dp),
         )
     }
 }
