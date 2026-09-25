@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AlertDialog
@@ -245,6 +246,10 @@ fun BoardTab(
             onSave = { vm.updateBed(it) },
             onDelete = {
                 vm.deleteBedWithUndo(bed)
+                editingBed = null
+            },
+            onExport = {
+                vm.openPatientExport(bed.label)
                 editingBed = null
             },
         )
@@ -473,6 +478,7 @@ private fun BedDialog(
     onDismiss: () -> Unit,
     onSave: (Bed) -> Unit,
     onDelete: () -> Unit,
+    onExport: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -501,6 +507,14 @@ private fun BedDialog(
                     label = "MRN",
                     seedKey = "${bed.id}-$generation-mrn",
                     singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                NsAction(
+                    label = "Send this patient's notes",
+                    onClick = onExport,
+                    icon = Icons.Filled.Share,
+                    tone = Accent,
+                    filled = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(

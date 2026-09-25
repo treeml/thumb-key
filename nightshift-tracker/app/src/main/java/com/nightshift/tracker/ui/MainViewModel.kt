@@ -23,6 +23,7 @@ import com.nightshift.tracker.data.WardRound
 import com.nightshift.tracker.ui.capture.parseCapture
 import com.nightshift.tracker.ui.handover.buildHandover
 import com.nightshift.tracker.ui.reviews.ReviewTemplate
+import com.nightshift.tracker.ui.shift.buildPatientExport
 import com.nightshift.tracker.ui.shift.buildShiftExport
 import com.nightshift.tracker.ui.rounds.buildRoundNote
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -575,6 +576,15 @@ class MainViewModel(
         openNoteReview(
             buildShiftExport(shift, beds.value, jobs.value, reviews.value, rounds.value),
             "Shift export",
+        )
+    }
+
+    /** One patient's notes, same format, for handing to one person. */
+    fun openPatientExport(label: String) {
+        val shift = activeShift.value ?: return
+        openNoteReview(
+            buildPatientExport(shift, label, beds.value, jobs.value, reviews.value, rounds.value),
+            "Notes — ${label.trim()}",
         )
     }
 
