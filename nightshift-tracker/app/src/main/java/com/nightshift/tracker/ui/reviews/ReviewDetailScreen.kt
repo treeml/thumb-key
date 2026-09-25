@@ -190,9 +190,38 @@ fun ReviewDetailScreen(
                 filled = remind != null,
             )
 
-            Text("ABCDE", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-            abcdeCheats.forEach { cheat ->
-                AbcdeField(cheat = cheat, review = review, vm = vm, generation = generation)
+            // ABCDE is five of this form's eleven fields and most reviews never
+            // fill one in — a potassium chase does not need a primary survey.
+            // So it opens only when it is already being used, and otherwise
+            // costs one tap. The cheat sheets behind each "?" are untouched.
+            val abcdeUsed =
+                listOf(review.a, review.b, review.c, review.d, review.e).any { it.isNotBlank() }
+            var showAbcde by rememberSaveable(review.id) { mutableStateOf(abcdeUsed) }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { showAbcde = !showAbcde }
+                        .padding(vertical = 6.dp),
+            ) {
+                Text(
+                    "ABCDE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    if (showAbcde) "Hide" else "Add findings",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (showAbcde) {
+                abcdeCheats.forEach { cheat ->
+                    AbcdeField(cheat = cheat, review = review, vm = vm, generation = generation)
+                }
             }
 
             DbTextField(

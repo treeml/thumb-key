@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -66,6 +67,10 @@ fun CaptureBar(
     onSeedConsumed: () -> Unit = {},
     /** Label of the bed currently open, or null when none is. */
     targetLabel: String? = null,
+    /** Bed labels already on this shift, so typing one can jump to it. */
+    knownBeds: List<String> = emptyList(),
+    /** Called instead of onCapture when the whole line is just a bed. */
+    onJump: (String) -> Unit = {},
 ) {
     var raw by remember { mutableStateOf("") }
     val parsed = remember(raw) { parseCapture(raw) }
@@ -81,12 +86,36 @@ fun CaptureBar(
         }
     }
 
-    fun submit() {
-        if (raw.isNotBlank()) {
-            tick()
-            onCapture(raw)
-            raw = ""
+    /**
+     * A line that is nothing but the name of a bed you already have is not a
+     * job called "34" — it is you looking for bed 34. Typing it and pressing
+     * send jumps to that patient instead of filing an empty task against them.
+     *
+     * Only ever an exact match against a bed that exists: guessing here would
+     * mean a real job silently turning into a navigation, which is worse than
+     * having to tap the list.
+     */
+    val jumpTarget =
+        remember(raw, knownBeds) {
+            val typed = raw.trim()
+            if (typed.isBlank() || typed.contains(' ')) {
+                null
+            } else {
+                val bare = typed.removePrefix("b").removePrefix("B")
+                knownBeds.firstOrNull { it.equals(typed, true) || it.equals(bare, true) }
+            }
         }
+
+    fun submit() {
+        if (raw.isBlank()) return
+        tick()
+        val jump = jumpTarget
+        if (jump != null) {
+            onJump(jump)
+        } else {
+            onCapture(raw)
+        }
+        raw = ""
     }
 
     val lineCount = raw.split('\n', ';').count { it.isNotBlank() }
@@ -116,7 +145,9 @@ fun CaptureBar(
                         MaterialTheme.colorScheme.primary
                     },
             )
-            if (raw.isNotBlank()) {
+            if (jumpTarget != null) {
+                Chip("go to ${bedLabel(jumpTarget)}", MaterialTheme.colorScheme.primary)
+            } else if (raw.isNotBlank()) {
                 if (lineCount > 1) Chip("$lineCount jobs", MaterialTheme.colorScheme.primary)
                 parsed.chips().forEach { chip ->
                     val tint =
@@ -173,8 +204,8 @@ fun CaptureBar(
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Add job",
+                        if (jumpTarget != null) Icons.AutoMirrored.Filled.ArrowForward else Icons.AutoMirrored.Filled.Send,
+                        contentDescription = if (jumpTarget != null) "Go to bed" else "Add job",
                         tint = if (raw.isBlank()) TextSecondary else MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp),
                     )

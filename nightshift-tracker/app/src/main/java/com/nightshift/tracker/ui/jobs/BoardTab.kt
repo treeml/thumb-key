@@ -117,6 +117,7 @@ fun BoardTab(
     var showCompleted by rememberSaveable { mutableStateOf(false) }
     var editingBed by remember { mutableStateOf<Bed?>(null) }
     var watchOnly by rememberSaveable { mutableStateOf(false) }
+    val focused = vm.focusedBed.collectAsStateValue()
 
     val watchedLabels =
         beds.filter { it.watch }.map { it.label.trim().uppercase() }.toSet()
@@ -128,6 +129,7 @@ fun BoardTab(
         grouped.keys
             .filter { it.isNotBlank() }
             .filter { !watchOnly || it in watchedLabels }
+            .filter { focused == null || it.equals(focused.trim(), ignoreCase = true) }
             .sortedWith(
                 // Watched beds first: the whole point of flagging someone is not
                 // having to go looking for them.
@@ -137,7 +139,7 @@ fun BoardTab(
                     { bedRank(it).second },
                 ),
             )
-    val loose = if (watchOnly) emptyList() else grouped[""].orEmpty()
+    val loose = if (watchOnly || focused != null) emptyList() else grouped[""].orEmpty()
 
     Column(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -158,6 +160,14 @@ fun BoardTab(
                             icon = Icons.Filled.Add,
                             tone = Accent,
                         )
+                        if (focused != null) {
+                            NsAction(
+                                label = "${bedLabel(focused)}  ✕",
+                                onClick = { vm.focusBed(null) },
+                                tone = Accent,
+                                filled = true,
+                            )
+                        }
                         if (watchedLabels.isNotEmpty()) {
                             NsAction(
                                 label = "Watching ${watchedLabels.size}",
@@ -170,7 +180,16 @@ fun BoardTab(
                     }
                 }
 
-                if (items.isEmpty()) {
+                if (focused != null && bedGroups.isEmpty()) {
+                    item(key = "focus-empty") {
+                        Text(
+                            "Nothing on ${bedLabel(focused)} right now.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 20.dp),
+                        )
+                    }
+                } else if (items.isEmpty()) {
                     item {
                         Text(
                             "Nothing on the list.\n\nType it all into one line below — " +
@@ -235,6 +254,8 @@ fun BoardTab(
             seed = seed,
             onSeedConsumed = { vm.clearCaptureSeed() },
             targetLabel = target?.label,
+            knownBeds = beds.map { it.label },
+            onJump = { vm.focusBed(it) },
         )
     }
 

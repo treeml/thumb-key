@@ -35,6 +35,7 @@ import com.nightshift.tracker.ui.MainViewModel
 import com.nightshift.tracker.ui.Screen
 import com.nightshift.tracker.ui.board.BoardItem
 import com.nightshift.tracker.ui.board.boardOrder
+import com.nightshift.tracker.ui.capture.CaptureBar
 import com.nightshift.tracker.ui.capture.bedLabel
 import com.nightshift.tracker.ui.design.NsAction
 import com.nightshift.tracker.ui.design.NsChip
@@ -82,108 +83,125 @@ fun CommandCentre(
     // The thing that gets people in trouble is a review with no plan written.
     val unplanned = reviews.count { !it.done && it.impression.isBlank() && it.plan.isBlank() }
 
-    LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
-        verticalArrangement = Arrangement.spacedBy(Space.md),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        item { ClockCard(shift = shift, now = now, onBreak = { vm.recordBreak() }) }
+    val seed = vm.captureSeed.collectAsStateValue()
+    val target = vm.captureTarget.collectAsStateValue()
 
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.fillMaxWidth()) {
-                Stat("${items.size}", "on the list", if (items.isEmpty()) TextSecondary else Accent, onOpenBoard, Modifier.weight(1f))
-                Stat("$overdue", "overdue", if (overdue > 0) UrgentRed else TextSecondary, onOpenBoard, Modifier.weight(1f))
-                Stat("$urgent", "urgent", if (urgent > 0) UrgentRed else TextSecondary, onOpenBoard, Modifier.weight(1f))
-                Stat("$openReviews", "reviews", if (openReviews > 0) SoonYellow else TextSecondary, onOpenBoard, Modifier.weight(1f))
-            }
-        }
+    Column(Modifier.fillMaxSize()) {
+        LazyColumn(
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(Space.md),
+            modifier = Modifier.fillMaxWidth().weight(1f),
+        ) {
+            item { ClockCard(shift = shift, now = now, onBreak = { vm.recordBreak() }) }
 
-        val watched = beds.filter { it.watch }
-        if (watched.isNotEmpty()) {
-            item { SectionLabel("WATCHING") }
-            items(watched.size) { i ->
-                val bed = watched[i]
-                val key = bed.label.trim().uppercase()
-                val theirs = items.filter { it.bedText.trim().uppercase() == key }
-                WatchRow(
-                    bed = bed,
-                    outstanding = theirs.size,
-                    overdue = theirs.count { isOverdue(it.dueAt, now) },
-                    onClick = onOpenBoard,
-                )
-            }
-        }
-
-        if (next.isNotEmpty()) {
-            item { SectionLabel("NEXT UP") }
-            items(next.size) { i ->
-                val item = next[i]
-                NextRow(
-                    item = item,
-                    now = now,
-                    onClick = {
-                        when (item) {
-                            is BoardItem.JobItem -> vm.openJob(item.job)
-                            is BoardItem.ReviewItem -> vm.openReview(item.review)
-                        }
-                    },
-                )
-            }
-        }
-
-        if (unplanned > 0) {
             item {
-                Text(
-                    "$unplanned review${if (unplanned == 1) "" else "s"} with no impression or " +
-                        "plan written yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = SoonYellow,
-                    modifier = Modifier.padding(top = Space.sm),
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm), modifier = Modifier.fillMaxWidth()) {
+                    Stat("${items.size}", "on the list", if (items.isEmpty()) TextSecondary else Accent, onOpenBoard, Modifier.weight(1f))
+                    Stat("$overdue", "overdue", if (overdue > 0) UrgentRed else TextSecondary, onOpenBoard, Modifier.weight(1f))
+                    Stat("$urgent", "urgent", if (urgent > 0) UrgentRed else TextSecondary, onOpenBoard, Modifier.weight(1f))
+                    Stat("$openReviews", "reviews", if (openReviews > 0) SoonYellow else TextSecondary, onOpenBoard, Modifier.weight(1f))
+                }
+            }
+
+            val watched = beds.filter { it.watch }
+            if (watched.isNotEmpty()) {
+                item { SectionLabel("WATCHING") }
+                items(watched.size) { i ->
+                    val bed = watched[i]
+                    val key = bed.label.trim().uppercase()
+                    val theirs = items.filter { it.bedText.trim().uppercase() == key }
+                    WatchRow(
+                        bed = bed,
+                        outstanding = theirs.size,
+                        overdue = theirs.count { isOverdue(it.dueAt, now) },
+                        onClick = onOpenBoard,
+                    )
+                }
+            }
+
+            if (next.isNotEmpty()) {
+                item { SectionLabel("NEXT UP") }
+                items(next.size) { i ->
+                    val item = next[i]
+                    NextRow(
+                        item = item,
+                        now = now,
+                        onClick = {
+                            when (item) {
+                                is BoardItem.JobItem -> vm.openJob(item.job)
+                                is BoardItem.ReviewItem -> vm.openReview(item.review)
+                            }
+                        },
+                    )
+                }
+            }
+
+            if (unplanned > 0) {
+                item {
+                    Text(
+                        "$unplanned review${if (unplanned == 1) "" else "s"} with no impression or " +
+                            "plan written yet.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = SoonYellow,
+                        modifier = Modifier.padding(top = Space.sm),
+                    )
+                }
+            }
+
+            item { SectionLabel("GO TO") }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        NsAction(
+                            label = "New review",
+                            onClick = { vm.openNewReview() },
+                            icon = Icons.Filled.Add,
+                            tone = Accent,
+                            filled = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        NsAction(
+                            label = "Handover",
+                            onClick = { vm.openHandover() },
+                            icon = Icons.AutoMirrored.Filled.Assignment,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
+                        NsAction(
+                            label = "Logbook",
+                            onClick = { vm.screen.value = Screen.Logbook },
+                            icon = Icons.Filled.MenuBook,
+                            modifier = Modifier.weight(1f),
+                        )
+                        NsAction(
+                            label = "End shift",
+                            onClick = { vm.openEndShift() },
+                            icon = Icons.Filled.DoneAll,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    NsAction(
+                        label = "Export the whole shift",
+                        onClick = { vm.openShiftExport() },
+                        icon = Icons.Filled.Share,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
 
-        item { SectionLabel("GO TO") }
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(Space.sm)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    NsAction(
-                        label = "New review",
-                        onClick = { vm.openNewReview() },
-                        icon = Icons.Filled.Add,
-                        tone = Accent,
-                        filled = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                    NsAction(
-                        label = "Handover",
-                        onClick = { vm.openHandover() },
-                        icon = Icons.AutoMirrored.Filled.Assignment,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(Space.sm)) {
-                    NsAction(
-                        label = "Logbook",
-                        onClick = { vm.screen.value = Screen.Logbook },
-                        icon = Icons.Filled.MenuBook,
-                        modifier = Modifier.weight(1f),
-                    )
-                    NsAction(
-                        label = "End shift",
-                        onClick = { vm.openEndShift() },
-                        icon = Icons.Filled.DoneAll,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                NsAction(
-                    label = "Export the whole shift",
-                    onClick = { vm.openShiftExport() },
-                    icon = Icons.Filled.Share,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
+        // The fastest thing in the app should not be one tab away from where
+        // it opens. The centre answers "what now"; most of the time the answer
+        // is "write this down before you forget it", so it answers that here.
+        CaptureBar(
+            onCapture = { vm.captureJob(it) },
+            seed = seed,
+            onSeedConsumed = { vm.clearCaptureSeed() },
+            targetLabel = target?.label,
+            knownBeds = beds.map { it.label },
+            onJump = { vm.focusBed(it) },
+        )
     }
 }
 

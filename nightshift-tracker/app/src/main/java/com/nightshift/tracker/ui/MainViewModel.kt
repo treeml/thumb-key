@@ -137,12 +137,14 @@ class MainViewModel(
 
     fun startShift(label: String) =
         viewModelScope.launch {
+            focusedBed.value = null
             repo.startShift(label)
             screen.value = Screen.ActiveShift
         }
 
     fun archiveActiveShift() =
         viewModelScope.launch {
+            focusedBed.value = null
             activeShift.value?.let { repo.archiveShift(it) }
             screen.value = Screen.Home
         }
@@ -151,11 +153,27 @@ class MainViewModel(
 
     fun updateJob(job: Job) = viewModelScope.launch { repo.updateJob(job) }
 
-    fun completeJob(job: Job) = viewModelScope.launch { repo.completeJob(job) }
+    /**
+     * Done, with a way back.
+     *
+     * Swiping is now the only way to finish something, which makes a stray
+     * swipe more costly than a stray tap used to be — and the Completed drawer
+     * is a recovery, not an undo. restoreJob puts the row back exactly as it
+     * was, timer and alarm included.
+     */
+    fun completeJob(job: Job) =
+        viewModelScope.launch {
+            repo.completeJob(job)
+            undoSnackbar("Job done") { repo.restoreJob(job) }
+        }
 
     fun reopenJob(job: Job) = viewModelScope.launch { repo.updateJob(job.copy(status = 1)) }
 
-    fun completeReview(review: Review) = viewModelScope.launch { repo.completeReview(review) }
+    fun completeReview(review: Review) =
+        viewModelScope.launch {
+            repo.completeReview(review)
+            undoSnackbar("Review done") { repo.restoreReview(review) }
+        }
 
     fun reopenReview(review: Review) = viewModelScope.launch { repo.updateReview(review.copy(done = false)) }
 
@@ -416,6 +434,22 @@ class MainViewModel(
     /** Which tab the shift screen is showing (0 = Jobs). Held here so other
      *  surfaces — a ward round card, say — can send the user to it. */
     val activeTab = MutableStateFlow(0)
+
+    /**
+     * A single patient the board is narrowed to, set by typing their bed into
+     * the capture bar.
+     *
+     * Narrowing beats scrolling: on a twenty-bed shift, finding bed 34 by eye
+     * is the slowest thing in the app, and showing that bed alone is both
+     * faster to reach and easier to read than landing you somewhere in a list.
+     */
+    val focusedBed = MutableStateFlow<String?>(null)
+
+    /** From either capture bar: show me this patient, on the board. */
+    fun focusBed(label: String?) {
+        focusedBed.value = label
+        if (label != null) activeTab.value = BOARD_TAB
+    }
 
     /** Index of the board within the shift's tabs — Centre sits in front of it. */
     val BOARD_TAB = 1
