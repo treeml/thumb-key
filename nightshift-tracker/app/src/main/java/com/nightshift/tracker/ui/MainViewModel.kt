@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -449,6 +450,33 @@ class MainViewModel(
     fun focusBed(label: String?) {
         focusedBed.value = label
         if (label != null) activeTab.value = BOARD_TAB
+    }
+
+    /**
+     * The five things this user writes most, offered as one-tap chips.
+     *
+     * Their own history, not a guessed vocabulary — and a phrase has to have
+     * been written at least twice before it appears, so a one-off never takes
+     * up a slot. This is the one thing in the app that gets faster the longer
+     * it is used.
+     */
+    val quickPhrases: StateFlow<List<String>> =
+        repo.jobDao
+            .topPhrases(12)
+            .map { rows -> rows.filter { it.uses >= 2 }.map { it.text.trim() }.take(5) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Rounds and reviews that have a photo attached — a marker on the board. */
+    val photoOwners: StateFlow<Set<String>> =
+        repo.photoDao
+            .ownersWithPhotos()
+            .map { it.toSet() }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    /** Drop a phrase into the capture bar rather than sending it: you usually
+     *  still need to say which bed, and a silent send would be a guess. */
+    fun seedCapture(text: String) {
+        captureSeed.value = text
     }
 
     /** Index of the board within the shift's tabs — Centre sits in front of it. */

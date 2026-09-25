@@ -60,6 +60,7 @@ fun SettingsScreen(vm: MainViewModel) {
     val large by AppSettings.largeText.collectAsStateWithLifecycle()
     val night by AppSettings.nightVision.collectAsStateWithLifecycle()
     val haptics by AppSettings.haptics.collectAsStateWithLifecycle()
+    val onDeviceVoice by AppSettings.onDeviceVoice.collectAsStateWithLifecycle()
     var showKey by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -93,6 +94,20 @@ fun SettingsScreen(vm: MainViewModel) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                 )
+            }
+
+            item { SectionLabel("DICTATION") }
+            item {
+                Toggle(
+                    title = "Keep dictation on the device",
+                    detail =
+                        "The mic button on the capture bar asks Android's speech recogniser " +
+                            "to stay offline, so spoken words are not sent to Google. It is a " +
+                            "request, not a guarantee — and a phone with no offline model may " +
+                            "refuse to listen at all, which is when you would turn this off. " +
+                            "Off, dictation behaves like your keyboard's mic.",
+                    checked = onDeviceVoice,
+                ) { AppSettings.setOnDeviceVoice(context, it) }
             }
 
             item { SectionLabel("READABILITY") }

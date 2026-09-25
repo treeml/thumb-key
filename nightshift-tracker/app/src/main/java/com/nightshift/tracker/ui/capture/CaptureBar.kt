@@ -17,6 +17,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nightshift.tracker.ui.settings.AppSettings
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.Icon
@@ -71,12 +80,55 @@ fun CaptureBar(
     knownBeds: List<String> = emptyList(),
     /** Called instead of onCapture when the whole line is just a bed. */
     onJump: (String) -> Unit = {},
+    /** The user's own most-written phrases, offered while the box is empty. */
+    quickPhrases: List<String> = emptyList(),
 ) {
     var raw by remember { mutableStateOf("") }
     val parsed = remember(raw) { parseCapture(raw) }
     val focusRequester = remember { FocusRequester() }
     val tick = rememberTick()
     val left = leftHanded()
+    val context = LocalContext.current
+    val onDevice by AppSettings.onDeviceVoice.collectAsStateWithLifecycle()
+
+    /**
+     * Dictation straight into the box, rather than via the keyboard's mic.
+     *
+     * Delegating to the system recogniser means no RECORD_AUDIO permission of
+     * our own, the same way photos delegate to the camera app. EXTRA_PREFER_OFFLINE
+     * asks it to stay on the device; Android decides, so it is a request and not
+     * a promise — which is exactly why it is a setting you can turn off when a
+     * phone has no offline model and refuses to listen.
+     */
+    val dictation =
+        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val spoken =
+                result.data
+                    ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                    ?.firstOrNull()
+                    .orEmpty()
+            if (spoken.isNotBlank()) {
+                raw = if (raw.isBlank()) spoken else "$raw $spoken"
+                runCatching { focusRequester.requestFocus() }
+            }
+        }
+
+    fun dictate() {
+        tick()
+        val intent =
+            Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(
+                    RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                )
+                putExtra(RecognizerIntent.EXTRA_PROMPT, "Job, bed, time")
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, onDevice)
+            }
+        // No recogniser installed is a real state on a stripped phone; failing
+        // silently would look like a dead button.
+        runCatching { dictation.launch(intent) }
+            .onFailure { Toast.makeText(context, "No speech recogniser on this phone", Toast.LENGTH_SHORT).show() }
+    }
 
     LaunchedEffect(seed) {
         if (seed != null) {
@@ -145,6 +197,13 @@ fun CaptureBar(
                         MaterialTheme.colorScheme.primary
                     },
             )
+            if (raw.isBlank() && quickPhrases.isNotEmpty()) {
+                // Costs no permanent space: the moment you type, these are
+                // replaced by what the parser understood.
+                quickPhrases.forEach { phrase ->
+                    Chip(phrase, TextSecondary, onClick = { raw = phrase })
+                }
+            }
             if (jumpTarget != null) {
                 Chip("go to ${bedLabel(jumpTarget)}", MaterialTheme.colorScheme.primary)
             } else if (raw.isNotBlank()) {
@@ -211,12 +270,30 @@ fun CaptureBar(
                     )
                 }
             }
-            // The send key sits under the thumb: left edge for a left-hander.
+            val micKey: @Composable () -> Unit = {
+                Box(
+                    Modifier
+                        .size(52.dp)
+                        .background(Surface2, RoundedCornerShape(Radius.md))
+                        .clickable { dictate() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Mic,
+                        contentDescription = "Dictate",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+            // Send and mic both sit under the thumb: left edge for a left-hander.
             if (left) {
                 sendKey()
+                micKey()
                 Box(Modifier.weight(1f)) { field() }
             } else {
                 Box(Modifier.weight(1f)) { field() }
+                micKey()
                 sendKey()
             }
         }
@@ -227,12 +304,15 @@ fun CaptureBar(
 private fun Chip(
     label: String,
     tint: androidx.compose.ui.graphics.Color,
+    onClick: (() -> Unit)? = null,
 ) {
     Box(
         Modifier
             .background(tint.copy(alpha = 0.16f), RoundedCornerShape(8.dp))
             .border(1.dp, tint.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            // A tappable chip needs a real target; a read-only one does not.
+            .padding(horizontal = 10.dp, vertical = if (onClick != null) 10.dp else 4.dp),
     ) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = tint)
     }

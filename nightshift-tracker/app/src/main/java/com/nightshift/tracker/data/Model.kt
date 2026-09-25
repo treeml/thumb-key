@@ -216,6 +216,12 @@ data class Photo(
     val createdAt: Long,
 )
 
+/** Query projection: one job phrase and how often it has been written. */
+data class PhraseUse(
+    val text: String,
+    val uses: Int,
+)
+
 /** Whole-database snapshot used for JSON auto-backup, export and import. */
 data class BackupPayload(
     val app: String = "nightshift-tracker",

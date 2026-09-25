@@ -17,6 +17,7 @@ object AppSettings {
     private const val KEY_NIGHT = "night_vision"
     private const val KEY_HAPTIC = "haptics"
     private const val KEY_GROUP_BED = "group_jobs_by_bed"
+    private const val KEY_ONDEVICE_VOICE = "on_device_voice"
 
     val leftHanded = MutableStateFlow(false)
     val largeText = MutableStateFlow(false)
@@ -26,6 +27,16 @@ object AppSettings {
     /** Jobs tab: group under bed headings instead of a flat urgency list. */
     val groupJobsByBed = MutableStateFlow(false)
 
+    /**
+     * Ask the speech recogniser to stay on the device.
+     *
+     * On by default. It is a request, not a guarantee — Android decides, and a
+     * phone with no offline model may refuse to listen at all, which is why
+     * this can be turned off. With it off, dictated words go to Google's speech
+     * service like any other keyboard mic would send them.
+     */
+    val onDeviceVoice = MutableStateFlow(true)
+
     fun load(context: Context) {
         val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         leftHanded.value = p.getBoolean(KEY_LEFT, false)
@@ -33,10 +44,16 @@ object AppSettings {
         nightVision.value = p.getBoolean(KEY_NIGHT, false)
         haptics.value = p.getBoolean(KEY_HAPTIC, true)
         groupJobsByBed.value = p.getBoolean(KEY_GROUP_BED, false)
+        onDeviceVoice.value = p.getBoolean(KEY_ONDEVICE_VOICE, true)
     }
 
     private fun put(context: Context, key: String, value: Boolean) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putBoolean(key, value).apply()
+    }
+
+    fun setOnDeviceVoice(context: Context, value: Boolean) {
+        onDeviceVoice.value = value
+        put(context, KEY_ONDEVICE_VOICE, value)
     }
 
     fun setLeftHanded(context: Context, value: Boolean) {

@@ -60,6 +60,22 @@ interface JobDao {
 
     @Query("SELECT * FROM jobs")
     suspend fun allOnce(): List<Job>
+
+    /**
+     * The phrases this user actually writes, most-used first.
+     *
+     * Grouped case-insensitively on the trimmed text so "Chase bloods" and
+     * "chase bloods" are the same habit. The text returned is the most recent
+     * spelling of it, which is the one they are used to seeing.
+     */
+    @Query(
+        "SELECT text AS text, COUNT(*) AS uses FROM jobs " +
+            "WHERE TRIM(text) <> '' " +
+            "GROUP BY LOWER(TRIM(text)) " +
+            "ORDER BY uses DESC, MAX(createdAt) DESC " +
+            "LIMIT :limit",
+    )
+    fun topPhrases(limit: Int): Flow<List<PhraseUse>>
 }
 
 @Dao
@@ -167,4 +183,8 @@ interface PhotoDao {
 
     @Query("SELECT * FROM photos")
     suspend fun allOnce(): List<Photo>
+
+    /** Which rounds and reviews carry a photo, for the marker on the board. */
+    @Query("SELECT DISTINCT ownerId FROM photos")
+    fun ownersWithPhotos(): Flow<List<String>>
 }

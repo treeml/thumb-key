@@ -85,6 +85,7 @@ fun CommandCentre(
 
     val seed = vm.captureSeed.collectAsStateValue()
     val target = vm.captureTarget.collectAsStateValue()
+    val phrases = vm.quickPhrases.collectAsStateValue()
 
     Column(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -132,6 +133,27 @@ fun CommandCentre(
                                 is BoardItem.ReviewItem -> vm.openReview(item.review)
                             }
                         },
+                    )
+                }
+            }
+
+            val loose = items.count { it.bedText.isBlank() }
+            if (loose > 0) {
+                item {
+                    // Things filed against nobody sit at the bottom of the board
+                    // where you do not look. That is an accuracy problem, not a
+                    // tidiness one.
+                    Text(
+                        "$loose thing${if (loose == 1) "" else "s"} with no bed against ${
+                            if (loose == 1) "it" else "them"
+                        }.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = SoonYellow,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onOpenBoard)
+                                .padding(top = Space.sm, bottom = Space.sm),
                     )
                 }
             }
@@ -201,6 +223,7 @@ fun CommandCentre(
             targetLabel = target?.label,
             knownBeds = beds.map { it.label },
             onJump = { vm.focusBed(it) },
+            quickPhrases = phrases,
         )
     }
 }

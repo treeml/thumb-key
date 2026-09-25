@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -104,6 +105,7 @@ fun BoardTab(
     val beds = vm.beds.collectAsStateValue()
     val seed = vm.captureSeed.collectAsStateValue()
     val target = vm.captureTarget.collectAsStateValue()
+    val phrases = vm.quickPhrases.collectAsStateValue()
     // Ticks, so the board re-sorts itself as deadlines come round.
     val now = rememberNow()
 
@@ -118,6 +120,7 @@ fun BoardTab(
     var editingBed by remember { mutableStateOf<Bed?>(null) }
     var watchOnly by rememberSaveable { mutableStateOf(false) }
     val focused = vm.focusedBed.collectAsStateValue()
+    val photoOwners = vm.photoOwners.collectAsStateValue()
 
     val watchedLabels =
         beds.filter { it.watch }.map { it.label.trim().uppercase() }.toSet()
@@ -216,14 +219,14 @@ fun BoardTab(
                         )
                     }
                     items(boardOrder(groupItems, now), key = { it.key }) { item ->
-                        BoardRow(item = item, vm = vm, now = now)
+                        BoardRow(item = item, vm = vm, now = now, photoOwners = photoOwners)
                     }
                 }
 
                 if (loose.isNotEmpty()) {
                     item(key = "loose-header") { GroupHeading("NO BED (${loose.size})") }
                     items(boardOrder(loose, now), key = { it.key }) { item ->
-                        BoardRow(item = item, vm = vm, now = now)
+                        BoardRow(item = item, vm = vm, now = now, photoOwners = photoOwners)
                     }
                 }
 
@@ -256,6 +259,7 @@ fun BoardTab(
             targetLabel = target?.label,
             knownBeds = beds.map { it.label },
             onJump = { vm.focusBed(it) },
+            quickPhrases = phrases,
         )
     }
 
@@ -366,6 +370,7 @@ private fun BoardRow(
     item: BoardItem,
     vm: MainViewModel,
     now: Long,
+    photoOwners: Set<String> = emptySet(),
 ) {
     val tick = rememberTick()
     val due = item.dueAt
@@ -428,6 +433,15 @@ private fun BoardRow(
                 // The one thing that has to be obvious at a glance: this is a
                 // patient to go and see, not a task to tick off.
                 NsChip("REVIEW", Accent)
+                if (item.review.id in photoOwners) {
+                    // Otherwise you have to open a review to find out it has one.
+                    Icon(
+                        Icons.Filled.PhotoCamera,
+                        contentDescription = "Has a photo",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
             }
             Text(
                 item.title,

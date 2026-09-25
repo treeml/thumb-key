@@ -15,6 +15,13 @@
             <action android:name="android.intent.action.SEND" />
             <data android:mimeType="text/plain" />
         </intent>
+        <!-- So the dictate button can find a speech recogniser to hand off to.
+             Without this the intent simply will not resolve on API 30+. No
+             RECORD_AUDIO of our own: the recogniser app owns the microphone,
+             the same way the camera app owns the camera. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
     </queries>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
