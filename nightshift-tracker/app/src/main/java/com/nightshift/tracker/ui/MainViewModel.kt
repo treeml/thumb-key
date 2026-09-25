@@ -1,0 +1,843 @@
+package com.nightshift.tracker.ui
+
+import android.app.Application
+import android.net.Uri
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.nightshift.tracker.NightshiftApp
+import com.nightshift.tracker.ai.AiFactory
+import com.nightshift.tracker.ai.AiPrefs
+import com.nightshift.tracker.ai.deidentify
+import com.nightshift.tracker.data.Bed
+import com.nightshift.tracker.data.Job
+import com.nightshift.tracker.data.LearningItem
+import com.nightshift.tracker.data.Photo
+import com.nightshift.tracker.data.ProcedureLog
+import com.nightshift.tracker.data.Review
+import com.nightshift.tracker.data.Shift
+import com.nightshift.tracker.data.ShiftSnapshot
+import com.nightshift.tracker.data.WardRound
+import com.nightshift.tracker.ui.capture.parseCapture
+import com.nightshift.tracker.ui.handover.buildHandover
+import com.nightshift.tracker.ui.reviews.ReviewTemplate
+import com.nightshift.tracker.ui.shift.buildPatientExport
+import com.nightshift.tracker.ui.shift.buildShiftExport
+import com.nightshift.tracker.ui.rounds.buildRoundNote
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+data class ArchiveSearchHit(
+    val shift: Shift,
+    val snippet: String,
+)
+
+sealed interface Screen {
+    data object Home : Screen
+
+    data object ActiveShift : Screen
+
+    data class ArchiveDetail(val shiftId: String) : Screen
+
+    /** Review / tidy / email the notes for the selected beds. */
+    data object BatchNotes : Screen
+
+    /** Generated written handover for the oncoming team. */
+    data object Handover : Screen
+
+    /** End-of-shift safety net before archiving. */
+    data object EndShift : Screen
+
+    /** Procedure logbook + learning questions; lives across shifts. */
+    data object Logbook : Screen
+
+    /** Handedness, readability, note tidying. */
+    data object Settings : Screen
+
+    /**
+     * One job, full screen. Editing used to happen by expanding the card in
+     * place, which meant the form was always half under the keyboard and
+     * always required scrolling — and scrolling a list you are typing into is
+     * how you tap the wrong row.
+     */
+    data class JobDetail(val jobId: String) : Screen
+
+    /** One review, full screen — a form has no business inside a list. */
+    data class ReviewDetail(val reviewId: String) : Screen
+
+    /** Pick a presentation (or type your own) to start a review from. */
+    data object NewReview : Screen
+}
+
+sealed interface AiState {
+    data object Idle : AiState
+
+    data object Running : AiState
+
+    data object Done : AiState
+
+    data class Error(val message: String) : AiState
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class MainViewModel(
+    app: Application,
+) : AndroidViewModel(app) {
+    private val repo = (app as NightshiftApp).repository
+
+    val snackbarHostState = SnackbarHostState()
+
+    // Navigation is deliberately shallow: home -> shift, home -> archived detail.
+    val screen = MutableStateFlow<Screen>(Screen.Home)
+
+    // Bumped after import/restore so text fields re-seed from the database.
+    val dataGeneration = MutableStateFlow(0)
+
+    val activeShift: StateFlow<Shift?> =
+        repo.shiftDao.activeShift()
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val archivedShifts: StateFlow<List<Shift>> =
+        repo.shiftDao.archivedShifts()
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val jobs: StateFlow<List<Job>> =
+        activeShift
+            .flatMapLatest { shift ->
+                if (shift == null) flowOf(emptyList()) else repo.jobDao.forShift(shift.id)
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val reviews: StateFlow<List<Review>> =
+        activeShift
+            .flatMapLatest { shift ->
+                if (shift == null) flowOf(emptyList()) else repo.reviewDao.forShift(shift.id)
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val beds: StateFlow<List<Bed>> =
+        activeShift
+            .flatMapLatest { shift ->
+                if (shift == null) flowOf(emptyList()) else repo.bedDao.forShift(shift.id)
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val rounds: StateFlow<List<WardRound>> =
+        activeShift
+            .flatMapLatest { shift ->
+                if (shift == null) flowOf(emptyList()) else repo.wardRoundDao.forShift(shift.id)
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun startShift(label: String) =
+        viewModelScope.launch {
+            focusedBed.value = null
+            repo.startShift(label)
+            screen.value = Screen.ActiveShift
+        }
+
+    fun archiveActiveShift() =
+        viewModelScope.launch {
+            focusedBed.value = null
+            activeShift.value?.let { repo.archiveShift(it) }
+            screen.value = Screen.Home
+        }
+
+    fun addJob() = viewModelScope.launch { activeShift.value?.let { repo.addJob(it.id) } }
+
+    fun updateJob(job: Job) = viewModelScope.launch { repo.updateJob(job) }
+
+    /**
+     * Done, with a way back.
+     *
+     * Swiping is now the only way to finish something, which makes a stray
+     * swipe more costly than a stray tap used to be — and the Completed drawer
+     * is a recovery, not an undo. restoreJob puts the row back exactly as it
+     * was, timer and alarm included.
+     */
+    fun completeJob(job: Job) =
+        viewModelScope.launch {
+            repo.completeJob(job)
+            undoSnackbar("Job done") { repo.restoreJob(job) }
+        }
+
+    fun reopenJob(job: Job) = viewModelScope.launch { repo.updateJob(job.copy(status = 1)) }
+
+    fun completeReview(review: Review) =
+        viewModelScope.launch {
+            repo.completeReview(review)
+            undoSnackbar("Review done") { repo.restoreReview(review) }
+        }
+
+    fun reopenReview(review: Review) = viewModelScope.launch { repo.updateReview(review.copy(done = false)) }
+
+    fun setJobTimer(job: Job, endAt: Long?) = viewModelScope.launch { repo.setJobTimer(job, endAt) }
+
+    fun deleteJobWithUndo(job: Job) =
+        viewModelScope.launch {
+            repo.deleteJob(job)
+            undoSnackbar("Job deleted") { repo.restoreJob(job) }
+        }
+
+    fun addReview() =
+        viewModelScope.launch {
+            val shift = activeShift.value ?: return@launch
+            screen.value = Screen.ReviewDetail(repo.addReview(shift.id).id)
+        }
+
+    fun openReview(review: Review) {
+        screen.value = Screen.ReviewDetail(review.id)
+    }
+
+    fun openNewReview() {
+        screen.value = Screen.NewReview
+    }
+
+    /**
+     * Starts a review from a presentation template: it fills the reason, the
+     * priority and a workup PROMPT list. It never fills findings — a template
+     * that pre-writes clinical findings is a lie waiting to be signed.
+     */
+    fun addReviewFromTemplate(template: ReviewTemplate) =
+        viewModelScope.launch {
+            val shift = activeShift.value ?: return@launch
+            val review = repo.addReview(shift.id)
+            repo.updateReview(
+                review.copy(
+                    reason = template.reason,
+                    priority = template.priority,
+                    investigations = template.workupPrompt,
+                    templateKey = template.label,
+                ),
+            )
+            screen.value = Screen.ReviewDetail(review.id)
+        }
+
+    /** Start a review from typed words when no template fits — nothing is lost. */
+    fun addReviewWithReason(reason: String) =
+        viewModelScope.launch {
+            val shift = activeShift.value ?: return@launch
+            val review = repo.addReview(shift.id)
+            repo.updateReview(review.copy(reason = reason.trim()))
+            screen.value = Screen.ReviewDetail(review.id)
+        }
+
+    /** Push a live or expired timer out by [minutes] without retyping anything. */
+    fun snoozeJob(job: Job, minutes: Int) =
+        viewModelScope.launch {
+            val base = maxOf(System.currentTimeMillis(), job.timerEndAt ?: 0L)
+            repo.setJobTimer(job, base + minutes * 60_000L)
+        }
+
+    fun updateReview(review: Review) = viewModelScope.launch { repo.updateReview(review) }
+
+    fun deleteReviewWithUndo(review: Review) =
+        viewModelScope.launch {
+            repo.deleteReview(review)
+            undoSnackbar("Review deleted") { repo.restoreReview(review) }
+        }
+
+    // ---- Multi-bed selection and the batch notes screen ----
+
+    val selectedRoundIds = MutableStateFlow<Set<String>>(emptySet())
+
+    /** The working text on the note screen: raw at first, tidied if asked. */
+    val batchText = MutableStateFlow("")
+
+    /** What the note screen is showing, used for its title and email subject. */
+    val batchSubject = MutableStateFlow("Notes")
+    val aiState = MutableStateFlow<AiState>(AiState.Idle)
+
+    /** Set when text came back from the model; cleared once the user ticks it off. */
+    val batchNeedsReview = MutableStateFlow(false)
+
+    fun toggleRoundSelected(id: String) {
+        selectedRoundIds.value =
+            selectedRoundIds.value.let { if (id in it) it - id else it + id }
+    }
+
+    fun selectAllVisibleRounds() {
+        selectedRoundIds.value = rounds.value.filter { !it.seen }.map { it.id }.toSet()
+    }
+
+    fun clearRoundSelection() {
+        selectedRoundIds.value = emptySet()
+    }
+
+    private fun selectedRoundsInOrder(): List<WardRound> =
+        rounds.value.filter { it.id in selectedRoundIds.value }
+
+    fun openBatchNotes() {
+        val selected = selectedRoundsInOrder()
+        if (selected.isEmpty()) return
+        openNoteReview(
+            text = selected.joinToString("\n\n———\n\n") { buildRoundNote(it).trim() },
+            subject = "Ward round notes",
+        )
+    }
+
+    /** Opens any generated note on the review/tidy/send screen. */
+    fun openNoteReview(text: String, subject: String) {
+        batchText.value = text
+        batchSubject.value = subject
+        aiState.value = AiState.Idle
+        batchNeedsReview.value = false
+        screen.value = Screen.BatchNotes
+    }
+
+    fun editBatchText(text: String) {
+        batchText.value = text
+    }
+
+    fun markBatchReviewed() {
+        batchNeedsReview.value = false
+    }
+
+    fun hasApiKey(): Boolean = AiPrefs.hasKey(getApplication())
+
+    fun setApiKey(value: String) = AiPrefs.setApiKey(getApplication(), value)
+
+    /**
+     * Sends de-identified text to Claude and restores identifiers locally.
+     * Names, MRNs and bed numbers never leave the device.
+     */
+    private suspend fun runTidy(text: String): Result<String> {
+        val tidier = AiFactory.create(getApplication())
+        if (tidier == null) {
+            return Result.failure(
+                IllegalStateException(
+                    if (AiFactory.AVAILABLE) {
+                        "Add your Anthropic API key in Settings first."
+                    } else {
+                        "Note tidying is not available in this build."
+                    },
+                ),
+            )
+        }
+        val (payload, deidentifier) = deidentify(text, reviews.value, rounds.value)
+        return tidier.tidy(payload).map { deidentifier.reidentify(it) }
+    }
+
+    fun tidyCurrentNote() =
+        viewModelScope.launch {
+            if (batchText.value.isBlank()) return@launch
+            aiState.value = AiState.Running
+            runTidy(batchText.value).fold(
+                onSuccess = {
+                    batchText.value = it
+                    batchNeedsReview.value = true
+                    aiState.value = AiState.Done
+                },
+                onFailure = { aiState.value = AiState.Error(it.message ?: "Request failed.") },
+            )
+        }
+
+    fun tidyHandover() =
+        viewModelScope.launch {
+            if (handoverText.value.isBlank()) return@launch
+            aiState.value = AiState.Running
+            runTidy(handoverText.value).fold(
+                onSuccess = {
+                    handoverText.value = it
+                    batchNeedsReview.value = true
+                    aiState.value = AiState.Done
+                },
+                onFailure = { aiState.value = AiState.Error(it.message ?: "Request failed.") },
+            )
+        }
+
+    // ---- Archive detail & search ----
+
+    data class ArchiveDetail(
+        val shift: Shift?,
+        val jobs: List<Job>,
+        val reviews: List<Review>,
+        val rounds: List<WardRound>,
+    )
+
+    suspend fun archivedShiftDetail(shiftId: String): ArchiveDetail =
+        ArchiveDetail(
+            shift = repo.shiftDao.byId(shiftId),
+            jobs = repo.jobDao.forShiftOnce(shiftId),
+            reviews = repo.reviewDao.forShiftOnce(shiftId),
+            rounds = repo.wardRoundDao.forShiftOnce(shiftId),
+        )
+
+    /** Free-text search across every archived shift's jobs and reviews. */
+    suspend fun searchArchived(query: String): List<ArchiveSearchHit> {
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) return emptyList()
+        val shifts = archivedShifts.value
+        val allJobs = repo.jobDao.allOnce().groupBy { it.shiftId }
+        val allReviews = repo.reviewDao.allOnce().groupBy { it.shiftId }
+        val allRounds = repo.wardRoundDao.allOnce().groupBy { it.shiftId }
+        return shifts.mapNotNull { shift ->
+            val hits = mutableListOf<String>()
+            if (shift.label.lowercase().contains(q)) hits += shift.label
+            allJobs[shift.id].orEmpty().forEach { job ->
+                listOf(job.text, job.bed).forEach { f ->
+                    if (f.lowercase().contains(q)) hits += "Job: $f"
+                }
+            }
+            allReviews[shift.id].orEmpty().forEach { r ->
+                listOf(
+                    r.bed, r.patientName, r.mrn, r.reason, r.a, r.b, r.c, r.d, r.e,
+                    r.investigations, r.impression, r.plan,
+                ).forEach { f ->
+                    if (f.lowercase().contains(q)) {
+                        hits += "Review ${r.patientName.ifBlank { r.bed }}: ${f.take(80)}"
+                    }
+                }
+            }
+            allRounds[shift.id].orEmpty().forEach { r ->
+                listOf(
+                    r.bed, r.patientName, r.mrn, r.dxOp, r.overnight, r.exam, r.results, r.plan,
+                ).forEach { f ->
+                    if (f.lowercase().contains(q)) {
+                        hits += "Round ${r.patientName.ifBlank { r.bed }}: ${f.take(80)}"
+                    }
+                }
+            }
+            if (hits.isEmpty()) null else ArchiveSearchHit(shift, hits.first().take(100))
+        }
+    }
+
+    // ---- Export / import ----
+
+    fun exportBackup(uri: Uri) =
+        viewModelScope.launch {
+            val result = repo.backup.exportTo(uri)
+            snackbarHostState.showSnackbar(
+                result.fold({ "Backup exported" }, { "Export failed: ${it.message}" }),
+                duration = SnackbarDuration.Short,
+            )
+        }
+
+    fun importBackup(uri: Uri) =
+        viewModelScope.launch {
+            val result = repo.backup.importFrom(uri)
+            bumpGeneration()
+            snackbarHostState.showSnackbar(
+                result.fold({ it }, { "Import failed: ${it.message}" }),
+                duration = SnackbarDuration.Long,
+            )
+        }
+
+    // ---- Quick capture ----
+
+    /** Which tab the shift screen is showing (0 = Jobs). Held here so other
+     *  surfaces — a ward round card, say — can send the user to it. */
+    val activeTab = MutableStateFlow(0)
+
+    /**
+     * A single patient the board is narrowed to, set by typing their bed into
+     * the capture bar.
+     *
+     * Narrowing beats scrolling: on a twenty-bed shift, finding bed 34 by eye
+     * is the slowest thing in the app, and showing that bed alone is both
+     * faster to reach and easier to read than landing you somewhere in a list.
+     */
+    val focusedBed = MutableStateFlow<String?>(null)
+
+    /** From either capture bar: show me this patient, on the board. */
+    fun focusBed(label: String?) {
+        focusedBed.value = label
+        if (label != null) activeTab.value = BOARD_TAB
+    }
+
+    /**
+     * The five things this user writes most, offered as one-tap chips.
+     *
+     * Their own history, not a guessed vocabulary — and a phrase has to have
+     * been written at least twice before it appears, so a one-off never takes
+     * up a slot. This is the one thing in the app that gets faster the longer
+     * it is used.
+     */
+    val quickPhrases: StateFlow<List<String>> =
+        repo.jobDao
+            .topPhrases(12)
+            .map { rows -> rows.filter { it.uses >= 2 }.map { it.text.trim() }.take(5) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Rounds and reviews that have a photo attached — a marker on the board. */
+    val photoOwners: StateFlow<Set<String>> =
+        repo.photoDao
+            .ownersWithPhotos()
+            .map { it.toSet() }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    /** Drop a phrase into the capture bar rather than sending it: you usually
+     *  still need to say which bed, and a silent send would be a guess. */
+    fun seedCapture(text: String) {
+        captureSeed.value = text
+    }
+
+    /** Index of the board within the shift's tabs — Centre sits in front of it. */
+    val BOARD_TAB = 1
+
+    fun selectTab(index: Int) {
+        activeTab.value = index
+    }
+
+    /** Text pushed into the capture bar; "" simply focuses it. */
+    val captureSeed = MutableStateFlow<String?>(null)
+
+    fun clearCaptureSeed() {
+        captureSeed.value = null
+    }
+
+    /**
+     * The bed currently open on the Jobs tab. Opening a bed IS the target for
+     * the fast bar — there is no separate mode to set, because a mode you have
+     * to remember is a mode you will get wrong at speed.
+     */
+    val openBedId = MutableStateFlow<String?>(null)
+
+    /**
+     * The bed the capture bar will actually write to.
+     *
+     * Derived, never stored, because a stored "current bed" drifts: finish the
+     * last job on bed 67 and the bed leaves the board, but the bar carries on
+     * promising to file things there. The rule is the one you can see — the bed
+     * is the target while it still has work on it, or while it is brand new and
+     * waiting for its first job (opened from a ward round card). A bed whose
+     * jobs are all done is neither, so the bar goes back to "No bed yet".
+     *
+     * Deriving it also means the label on the bar and the bed captureJob picks
+     * are the same value, so what it says and what it does cannot diverge.
+     */
+    val captureTarget: StateFlow<Bed?> =
+        combine(beds, jobs, openBedId) { allBeds, allJobs, id ->
+            val bed = allBeds.firstOrNull { it.id == id } ?: return@combine null
+            val mine = allJobs.filter { it.bedId == bed.id }
+            if (mine.isEmpty() || mine.any { it.status != 2 }) bed else null
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    fun openBed(bedId: String?) {
+        openBedId.value = bedId
+        if (bedId != null) captureSeed.value = ""
+    }
+
+    fun updateBed(bed: Bed) = viewModelScope.launch { repo.updateBed(bed) }
+
+    /** One tap from the bed heading — the flag has to be cheaper than the worry. */
+    fun toggleWatch(bed: Bed) = viewModelScope.launch { repo.updateBed(bed.copy(watch = !bed.watch)) }
+
+    fun deleteBedWithUndo(bed: Bed) =
+        viewModelScope.launch {
+            val orphaned = repo.deleteBed(bed)
+            if (openBedId.value == bed.id) openBedId.value = null
+            undoSnackbar("Bed deleted — its jobs kept") { repo.restoreBed(bed, orphaned) }
+        }
+
+    /** From a ward round card: open (creating if needed) that bed on Jobs. */
+    fun startJobForBed(label: String) =
+        viewModelScope.launch {
+            val shift = activeShift.value ?: return@launch
+            val trimmed = label.trim()
+            openBedId.value = if (trimmed.isBlank()) null else repo.ensureBed(shift.id, trimmed).id
+            activeTab.value = BOARD_TAB
+            captureSeed.value = ""
+        }
+
+    /**
+     * One line in, structured job out — or several, since writing up a round
+     * comes in clumps. Newlines and semicolons split into separate jobs, so
+     * "chase bloods; order CT; call family" is three jobs, not one.
+     *
+     * The bed is created by the act of writing the job. There is no separate
+     * step for entering beds any more: the version that had one was never used,
+     * because stopping to set up a bed before you can write the thing you are
+     * trying not to forget is exactly backwards.
+     *
+     * A line with no bed of its own falls back to the last bed written to, so
+     * a run of jobs for one patient only needs the bed on the first line.
+     */
+    fun captureJob(raw: String) =
+        viewModelScope.launch {
+            val shift = activeShift.value ?: return@launch
+            var current = captureTarget.value
+            val lines = raw.split('\n', ';').map { it.trim() }.filter { it.isNotBlank() }
+            for (line in lines) {
+                val parsed = parseCapture(line)
+                if (parsed.isEmpty) continue
+                val target =
+                    if (parsed.bed.isNotBlank()) {
+                        repo.ensureBed(shift.id, parsed.bed, parsed.patient, parsed.mrn)
+                    } else {
+                        // Same patient, next job: keep the details flowing onto
+                        // the bed even when only the first line named it.
+                        current?.let {
+                            if (parsed.patient.isNotBlank() || parsed.mrn.isNotBlank()) {
+                                repo.ensureBed(shift.id, it.label, parsed.patient, parsed.mrn)
+                            } else {
+                                it
+                            }
+                        }
+                    }
+                if (target != null) {
+                    current = target
+                    openBedId.value = target.id
+                }
+                val job = repo.addJob(shift.id)
+                val withDetail =
+                    job.copy(
+                        text = parsed.text,
+                        bedId = target?.id,
+                        bed = target?.label.orEmpty(),
+                        priority = parsed.priority,
+                    )
+                repo.updateJob(withDetail)
+                // A clock time ("at 0400") and a countdown ("30m") are the same
+                // thing underneath: an absolute deadline with an alarm on it.
+                val due =
+                    parsed.dueAt
+                        ?: parsed.timerMinutes?.let { System.currentTimeMillis() + it * 60_000L }
+                if (due != null) repo.setJobTimer(withDetail, due)
+            }
+        }
+
+    fun openJob(job: Job) {
+        screen.value = Screen.JobDetail(job.id)
+    }
+
+    /** Move a single job to another bed (or off the beds entirely). */
+    fun moveJobToBed(job: Job, bed: Bed?) =
+        viewModelScope.launch {
+            repo.updateJob(job.copy(bedId = bed?.id, bed = bed?.label.orEmpty()))
+        }
+
+    // ---- Wellbeing ----
+
+    fun recordBreak() =
+        viewModelScope.launch {
+            activeShift.value?.let {
+                repo.recordBreak(it)
+                snackbarHostState.showSnackbar("Break logged. Good.", duration = SnackbarDuration.Short)
+            }
+        }
+
+    // ---- Handover ----
+
+    val handoverText = MutableStateFlow("")
+
+    /**
+     * Everything on this shift as one shareable document. Organised by patient,
+     * reviews as SOAP, so it can be handed to a scribe, an inbox or a file
+     * without anyone having to reformat it.
+     */
+    fun openShiftExport() {
+        val shift = activeShift.value ?: return
+        openNoteReview(
+            buildShiftExport(shift, beds.value, jobs.value, reviews.value, rounds.value),
+            "Shift export",
+        )
+    }
+
+    /** One patient's notes, same format, for handing to one person. */
+    fun openPatientExport(label: String) {
+        val shift = activeShift.value ?: return
+        openNoteReview(
+            buildPatientExport(shift, label, beds.value, jobs.value, reviews.value, rounds.value),
+            "Notes — ${label.trim()}",
+        )
+    }
+
+    fun openHandover() {
+        val shift = activeShift.value ?: return
+        handoverText.value = buildHandover(shift, jobs.value, reviews.value, rounds.value)
+        screen.value = Screen.Handover
+    }
+
+    fun editHandoverText(text: String) {
+        handoverText.value = text
+    }
+
+    fun regenerateHandover() {
+        val shift = activeShift.value ?: return
+        handoverText.value = buildHandover(shift, jobs.value, reviews.value, rounds.value)
+    }
+
+    fun setHandoverNote(note: String) =
+        viewModelScope.launch {
+            activeShift.value?.let { repo.updateShift(it.copy(handoverNote = note)) }
+        }
+
+    fun openEndShift() {
+        screen.value = Screen.EndShift
+    }
+
+    // ---- Escalation (time-stamped, for the documentation trail) ----
+
+    /** An alarm on a review — "chase the gas at 04:00" is the common case. */
+    fun setReviewReminder(review: Review, at: Long?) =
+        viewModelScope.launch { repo.setReviewReminder(review, at) }
+
+    fun recordEscalation(review: Review, to: String) =
+        viewModelScope.launch {
+            repo.updateReview(
+                review.copy(
+                    escalatedTo = to,
+                    escalatedAt = System.currentTimeMillis(),
+                    registrarNotified = true,
+                ),
+            )
+        }
+
+    fun clearEscalation(review: Review) =
+        viewModelScope.launch {
+            repo.updateReview(review.copy(escalatedTo = "", escalatedAt = null, registrarNotified = false))
+        }
+
+    // ---- Procedure logbook ----
+
+    val procedures: StateFlow<List<ProcedureLog>> =
+        repo.procedureDao.all().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun logProcedure(
+        name: String,
+        supervision: String,
+        outcome: String,
+        notes: String,
+    ) = viewModelScope.launch {
+        repo.logProcedure(name, supervision, outcome, notes, activeShift.value?.id)
+        snackbarHostState.showSnackbar("Logged: $name", duration = SnackbarDuration.Short)
+    }
+
+    fun deleteProcedureWithUndo(entry: ProcedureLog) =
+        viewModelScope.launch {
+            repo.deleteProcedure(entry)
+            undoSnackbar("Logbook entry deleted") { repo.restoreProcedure(entry) }
+        }
+
+    // ---- Learning questions ----
+
+    val learning: StateFlow<List<LearningItem>> =
+        repo.learningDao.all().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun addQuestion(question: String, context: String = "") =
+        viewModelScope.launch {
+            if (question.isBlank()) return@launch
+            repo.addLearning(question.trim(), context, activeShift.value?.id)
+            snackbarHostState.showSnackbar("Saved to look up later", duration = SnackbarDuration.Short)
+        }
+
+    fun answerQuestion(item: LearningItem, answer: String) =
+        viewModelScope.launch {
+            repo.updateLearning(
+                item.copy(
+                    answer = answer,
+                    answeredAt = if (answer.isBlank()) null else (item.answeredAt ?: System.currentTimeMillis()),
+                ),
+            )
+        }
+
+    fun toggleQuestionStar(item: LearningItem) =
+        viewModelScope.launch { repo.updateLearning(item.copy(starred = !item.starred)) }
+
+    fun deleteQuestionWithUndo(item: LearningItem) =
+        viewModelScope.launch {
+            repo.deleteLearning(item)
+            undoSnackbar("Question deleted") { repo.restoreLearning(item) }
+        }
+
+    // ---- Photos (UroDay) ----
+
+    /**
+     * The photos on one round or review. Per-owner rather than a single shared
+     * list because a card only ever wants its own, and a photo is expensive
+     * enough to decode that handing every card the whole set would be wasteful.
+     */
+    fun photosFor(ownerId: String): Flow<List<Photo>> = repo.photoDao.forOwner(ownerId)
+
+    fun attachPhoto(ownerId: String, fileName: String) =
+        viewModelScope.launch { repo.addPhoto(ownerId, fileName) }
+
+    fun setPhotoCaption(photo: Photo, caption: String) =
+        viewModelScope.launch { repo.updatePhoto(photo.copy(caption = caption)) }
+
+    fun deletePhotoWithUndo(photo: Photo) =
+        viewModelScope.launch {
+            repo.deletePhoto(photo)
+            undoSnackbar("Photo deleted") { repo.restorePhoto(photo) }
+        }
+
+    fun deleteArchivedShiftWithUndo(shift: Shift) =
+        viewModelScope.launch {
+            val snapshot = repo.deleteShiftCascade(shift)
+            if (screen.value is Screen.ArchiveDetail) screen.value = Screen.Home
+            undoSnackbar("Shift deleted") { repo.restoreShiftCascade(snapshot) }
+        }
+
+    // ---- Ward rounds ----
+
+    fun addRound() = viewModelScope.launch { activeShift.value?.let { repo.addRound(it.id) } }
+
+    fun updateRound(round: WardRound) = viewModelScope.launch { repo.updateRound(round) }
+
+    fun markRoundSeen(round: WardRound) = viewModelScope.launch { repo.updateRound(round.copy(seen = true)) }
+
+    fun reopenRound(round: WardRound) = viewModelScope.launch { repo.updateRound(round.copy(seen = false)) }
+
+    fun deleteRoundWithUndo(round: WardRound) =
+        viewModelScope.launch {
+            repo.deleteRound(round)
+            undoSnackbar("Round entry deleted") { repo.restoreRound(round) }
+        }
+
+    // ---- Shared feedback ----
+
+    fun noteCopied() =
+        viewModelScope.launch {
+            snackbarHostState.showSnackbar(
+                "Note copied — paste into the record",
+                duration = SnackbarDuration.Short,
+            )
+        }
+
+    fun bumpGeneration() {
+        dataGeneration.value += 1
+    }
+
+    /**
+     * 6-second undo window. Compose's SnackbarHost places the snackbar in the
+     * normal composition with real hit-testing, so the action is reliably
+     * tappable — the bug that made undo useless in the old web app.
+     */
+    private fun undoSnackbar(
+        message: String,
+        restore: suspend () -> Unit,
+    ) {
+        viewModelScope.launch {
+            val showJob =
+                launch {
+                    val result =
+                        snackbarHostState.showSnackbar(
+                            message = message,
+                            actionLabel = "UNDO",
+                            withDismissAction = true,
+                            duration = SnackbarDuration.Indefinite,
+                        )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        restore()
+                        bumpGeneration()
+                    }
+                }
+            launch {
+                kotlinx.coroutines.delay(6000)
+                // Dismiss at exactly 6 s — but never interrupt a restore that
+                // is already running from an UNDO tap.
+                if (showJob.isActive) {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                }
+            }
+        }
+    }
+}
