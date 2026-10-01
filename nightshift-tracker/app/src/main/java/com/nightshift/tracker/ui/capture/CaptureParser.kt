@@ -148,7 +148,11 @@ private fun normaliseBed(token: String): String {
 private class Identity(val bed: String, val patient: String, val mrn: String, val rest: String)
 
 private fun peelIdentity(raw: String): Identity {
-    val tokens = raw.trim().split(Regex("""\s+""")).filter { it.isNotBlank() }
+    // Tokens with their positions, so what is left over can be sliced out of
+    // the original string rather than rebuilt from the words. Rebuilding
+    // flattened every line break in a pasted block into one run-on line.
+    val matches = Regex("""\S+""").findAll(raw).toList()
+    val tokens = matches.map { it.value }
     val bedParts = mutableListOf<String>()
     var patient = ""
     var mrn = ""
@@ -186,7 +190,13 @@ private fun peelIdentity(raw: String): Identity {
         }
         break
     }
-    return Identity(bedParts.joinToString(" "), patient, mrn, tokens.drop(i).joinToString(" "))
+    val rest =
+        if (i == 0) {
+            raw
+        } else {
+            raw.substring(matches[i - 1].range.last + 1)
+        }
+    return Identity(bedParts.joinToString(" "), patient, mrn, rest.trim())
 }
 
 // ---- the rest of the line ----
@@ -247,8 +257,15 @@ fun parseCapture(raw: String, now: Long = System.currentTimeMillis()): ParsedCap
         consume(SOON_WORDS) { priority = 2 }
     }
 
-    // Tidy the leftovers: collapse whitespace, drop dangling "in"/"at"/"for".
-    text = text.replace(Regex("""\s+"""), " ").trim()
+    // Tidy the leftovers: collapse runs of spaces, drop dangling "in"/"at"/"for".
+    //
+    // Line breaks survive. A pasted block is one job, and a job whose text came
+    // from somewhere else should still read the way it did there — flattening
+    // it into a single paragraph loses whatever structure made it worth
+    // pasting.
+    text = text.replace(Regex("""[ \t]+"""), " ")
+    text = text.replace(Regex("""[ \t]*\n[ \t]*"""), "\n")
+    text = text.replace(Regex("""\n{3,}"""), "\n\n").trim()
     text = FILLER.replace(text, "").trim()
     text = text.trim(' ', ',', '-', ':')
     if (text.isNotEmpty()) text = text.replaceFirstChar { it.uppercase() }

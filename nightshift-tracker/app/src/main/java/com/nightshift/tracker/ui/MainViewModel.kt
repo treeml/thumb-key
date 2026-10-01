@@ -564,7 +564,14 @@ class MainViewModel(
         viewModelScope.launch {
             val shift = activeShift.value ?: return@launch
             var current = captureTarget.value
-            val lines = raw.split('\n', ';').map { it.trim() }.filter { it.isNotBlank() }
+            // Semicolons split, line breaks do not.
+            //
+            // Splitting on newlines meant pasting anything — a handover, a set
+            // of results, a paragraph from someone else's note — exploded into
+            // one junk job per line. A semicolon is a character you have to go
+            // out of your way to type, so it still means "and another one",
+            // while pasted text arrives as the single thing it is.
+            val lines = raw.split(';').map { it.trim() }.filter { it.isNotBlank() }
             for (line in lines) {
                 val parsed = parseCapture(line)
                 if (parsed.isEmpty) continue

@@ -53,6 +53,7 @@ import com.nightshift.tracker.ui.settings.leftHanded
 import com.nightshift.tracker.ui.theme.Ink
 import com.nightshift.tracker.ui.theme.Outline
 import com.nightshift.tracker.ui.theme.Surface2
+import com.nightshift.tracker.ui.theme.SoonYellow
 import com.nightshift.tracker.ui.theme.TextSecondary
 import com.nightshift.tracker.ui.theme.priorityColor
 
@@ -170,7 +171,7 @@ fun CaptureBar(
         raw = ""
     }
 
-    val lineCount = raw.split('\n', ';').count { it.isNotBlank() }
+    val lineCount = raw.split(';').count { it.isNotBlank() }
 
     Column(
         modifier
@@ -207,7 +208,7 @@ fun CaptureBar(
             if (jumpTarget != null) {
                 Chip("go to ${bedLabel(jumpTarget)}", MaterialTheme.colorScheme.primary)
             } else if (raw.isNotBlank()) {
-                if (lineCount > 1) Chip("$lineCount jobs", MaterialTheme.colorScheme.primary)
+                if (lineCount > 1) Chip("will make $lineCount jobs", SoonYellow)
                 parsed.chips().forEach { chip ->
                     val tint =
                         when (chip) {
