@@ -15,6 +15,19 @@ android {
         versionName = "1.0"
     }
 
+    buildFeatures { buildConfig = true }
+
+    // "plain" installs from a browser; "tap" declares an accessibility service, which
+    // Play Protect will not let you sideload, so it needs adb install.
+    flavorDimensions += "autotap"
+    productFlavors {
+        create("plain") { dimension = "autotap" }
+        create("tap") {
+            dimension = "autotap"
+            applicationIdSuffix = ".tap"
+        }
+    }
+
     buildTypes {
         release { isMinifyEnabled = false }
     }

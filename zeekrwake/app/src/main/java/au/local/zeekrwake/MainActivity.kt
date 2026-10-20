@@ -53,8 +53,10 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:$packageName")))
         }
-        button("Open accessibility settings", root) {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        if (BuildConfig.FLAVOR == "tap") {
+            button("Open accessibility settings", root) {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
         }
         button("Battery: set unrestricted", root) {
             startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,

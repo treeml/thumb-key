@@ -15,10 +15,17 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
 
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+
+    <!-- Narrower than QUERY_ALL_PACKAGES: we only need to see launchable apps so we can
+         find the Zeekr package and start it. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:name=".App"
@@ -52,18 +59,8 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
-
-        <service
-            android:name=".ZeekrTapService"
-            android:exported="false"
-            android:label="ZeekrWake auto-tap"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
+        <!-- The accessibility service is declared only in the "tap" flavour. Play Protect's
+             enhanced fraud protection refuses to install any sideloaded APK that declares
+             one, so the default flavour ships without it. -->
     </application>
 </manifest>

@@ -20,24 +20,34 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Build debug APK
+      - name: Build debug APKs
         working-directory: zeekrwake
-        run: ./gradlew --no-daemon assembleDebug
+        run: ./gradlew --no-daemon assemblePlainDebug assembleTapDebug
 
-      - name: Rename
-        run: cp zeekrwake/app/build/outputs/apk/debug/app-debug.apk zeekrwake.apk
+      - name: Collect
+        run: |
+          cp zeekrwake/app/build/outputs/apk/plain/debug/app-plain-debug.apk zeekrwake.apk
+          cp zeekrwake/app/build/outputs/apk/tap/debug/app-tap-debug.apk zeekrwake-tap.apk
+          ls -l zeekrwake*.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: zeekrwake-apk
-          path: zeekrwake.apk
+          path: zeekrwake*.apk
 
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete zeekrwake --yes --cleanup-tag || true
-          gh release create zeekrwake zeekrwake.apk \
+          gh release create zeekrwake zeekrwake.apk zeekrwake-tap.apk \
             --target "$GITHUB_SHA" \
             --title "ZeekrWake" \
-            --notes "Debug-signed sideload build. Wakes the Zeekr app and taps its connect control when the car's BLE advertisement is detected. Setup: zeekrwake/README.md"
+            --notes "Debug-signed sideload builds. Wakes the Zeekr app when the car's BLE advertisement is detected.
+
+          zeekrwake.apk      - installs normally from a browser. No accessibility service.
+          zeekrwake-tap.apk  - also auto-taps the connect button. Declares an accessibility
+                               service, so Play Protect blocks browser installs: use
+                               'adb install zeekrwake-tap.apk'.
+
+          Setup: zeekrwake/README.md"

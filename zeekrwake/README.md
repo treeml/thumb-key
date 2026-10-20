@@ -23,10 +23,25 @@ Caveats, so there are no surprises:
   detection and disarmed after one successful tap, so it is not watching your
   screen the rest of the day.
 
+## Two builds
+
+**`zeekrwake.apk`** (flavour `plain`) installs normally from a browser. It detects the
+car and brings the Zeekr app to the foreground; you press connect yourself. Still one
+tap instead of unlock, hunt for the app, open, press.
+
+**`zeekrwake-tap.apk`** (flavour `tap`) also presses connect for you. It declares an
+accessibility service, and Play Protect's enhanced fraud protection refuses to install
+any sideloaded APK that declares one, with no override offered. Install it with adb,
+which is not subject to that check:
+
+    adb install zeekrwake-tap.apk
+
+The two have different application IDs, so both can sit on the phone at once while you
+work out which you need.
+
 ## Build
 
-No Android SDK in this container, so this has not been compiled here. Build it
-yourself:
+Build it yourself if you'd rather not use the published APKs:
 
 1. Open the `zeekrwake` folder in Android Studio (File > Open).
 2. Let it sync, then Run on your phone with USB debugging on.
