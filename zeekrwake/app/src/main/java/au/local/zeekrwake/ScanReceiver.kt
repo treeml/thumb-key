@@ -35,7 +35,17 @@ class ScanReceiver : BroadcastReceiver() {
         if (results.isEmpty()) return
 
         val rssi = results.maxOf { it.rssi }
+        val stamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date())
         Log.i(Wake.TAG, "car seen, rssi=$rssi, n=${results.size}")
+
+        val gate = Prefs.rssiGate
+        if (rssi < gate) {
+            Prefs.lastSeen = "$stamp  rssi=$rssi  too far (gate $gate), ignored"
+            Log.i(Wake.TAG, "below gate $gate, ignoring")
+            return
+        }
+        Prefs.lastSeen = "$stamp  rssi=$rssi  woke Zeekr"
 
         val now = SystemClock.elapsedRealtime()
         if (now - Prefs.lastWakeMs < Wake.COOLDOWN_MS) return

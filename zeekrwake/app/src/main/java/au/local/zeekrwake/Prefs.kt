@@ -27,9 +27,19 @@ object Prefs {
         get() = p(appCtx!!).getString("labels", "Disconnected,Connect,Bluetooth,连接") ?: ""
         set(v) = p(appCtx!!).edit().putString("labels", v).apply()
 
+    /** Ignore detections weaker than this, so the car is not woken from across the car park. */
+    var rssiGate: Int
+        get() = p(appCtx!!).getInt("rssiGate", -75)
+        set(v) = p(appCtx!!).edit().putInt("rssiGate", v).apply()
+
     var lastWakeMs: Long
         get() = p(appCtx!!).getLong("lastWake", 0L)
         set(v) = p(appCtx!!).edit().putLong("lastWake", v).apply()
+
+    /** Human readable record of the last detection, so the UI can show it without adb. */
+    var lastSeen: String
+        get() = p(appCtx!!).getString("lastSeen", "(nothing yet)") ?: ""
+        set(v) = p(appCtx!!).edit().putString("lastSeen", v).apply()
 
     var appCtx: Context? = null
 }

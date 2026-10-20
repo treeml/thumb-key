@@ -26,6 +26,7 @@ class MainActivity : Activity() {
     private lateinit var uuidField: EditText
     private lateinit var pkgField: EditText
     private lateinit var labelField: EditText
+    private lateinit var gateField: EditText
     private lateinit var log: TextView
 
     private val seen = linkedMapOf<String, String>()
@@ -45,6 +46,8 @@ class MainActivity : Activity() {
         uuidField = field("or service UUID (if MAC rotates)", Prefs.serviceUuid, root)
         pkgField = field("Zeekr package name", Prefs.target, root)
         labelField = field("Button text to tap (comma separated)", Prefs.tapLabels, root)
+        gateField = field("Only wake above this RSSI (-75 is a few metres)",
+            Prefs.rssiGate.toString(), root)
 
         button("Find the Zeekr package", root) { listZeekrPackages() }
         button("Scan 15s: list nearby BLE devices", root) { discover() }
@@ -62,6 +65,7 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:$packageName")))
         }
+        button("Show last detection", root) { say("last detection: ${Prefs.lastSeen}") }
         button("ARM (register background scan)", root) { save(); say(Wake.register(this)) }
         button("Disarm", root) { Wake.unregister(this); say("Scan unregistered") }
         button("Test: launch + tap now", root) {
@@ -83,6 +87,7 @@ class MainActivity : Activity() {
         Prefs.serviceUuid = uuidField.text.toString()
         Prefs.target = pkgField.text.toString()
         Prefs.tapLabels = labelField.text.toString()
+        gateField.text.toString().trim().toIntOrNull()?.let { Prefs.rssiGate = it }
     }
 
     private fun field(hint: String, value: String, parent: LinearLayout): EditText {
@@ -123,11 +128,26 @@ class MainActivity : Activity() {
         val pm = packageManager
         @Suppress("DEPRECATION")
         val hits = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+            .filter { it.packageName != packageName }   // not ourselves
             .filter { it.packageName.contains("zeekr", true) ||
                       pm.getApplicationLabel(it).toString().contains("zeekr", true) }
             .map { "${pm.getApplicationLabel(it)}  ->  ${it.packageName}" }
         say(if (hits.isEmpty()) "No Zeekr app found" else hits.joinToString("\n"))
         hits.firstOrNull()?.substringAfter("->")?.trim()?.let { pkgField.setText(it) }
+    }
+
+    /**
+     * The top two bits of a BLE random address say whether it rotates. 01 is a resolvable
+     * private address, which changes every ~15 minutes, so filtering on that MAC is useless
+     * and you want the service UUID instead.
+     */
+    private fun addrKind(mac: String): String {
+        val msb = mac.substringBefore(':').toIntOrNull(16) ?: return ""
+        return when (msb shr 6) {
+            0b01 -> "[rotates]"
+            0b11 -> "[static]"
+            else -> "[fixed]"
+        }
     }
 
     /** One-off foreground scan so you can identify the car without a third party tool. */
@@ -140,7 +160,8 @@ class MainActivity : Activity() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 val uuids = result.scanRecord?.serviceUuids?.joinToString(",") ?: "-"
                 seen[result.device.address] =
-                    "${result.device.address}  ${result.scanRecord?.deviceName ?: "?"}  " +
+                    "${result.device.address} ${addrKind(result.device.address)}  " +
+                    "${result.scanRecord?.deviceName ?: "?"}  " +
                     "rssi=${result.rssi}  uuids=$uuids"
             }
         }
