@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +45,7 @@ import com.nightshift.tracker.ui.design.Space
 import com.nightshift.tracker.ui.design.dueColor
 import com.nightshift.tracker.ui.design.dueText
 import com.nightshift.tracker.ui.theme.Ink
+import com.nightshift.tracker.ui.theme.SoonYellow
 import com.nightshift.tracker.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 
@@ -148,6 +150,15 @@ fun JobDetailScreen(
                 icon = Icons.Filled.Alarm,
                 tone = if (due == null) null else urgency,
                 filled = due != null,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            NsAction(
+                label = if (job.handover) "Flagged for handover" else "Flag for handover",
+                onClick = { vm.toggleHandover(job) },
+                icon = Icons.Filled.Flag,
+                tone = if (job.handover) SoonYellow else null,
+                filled = job.handover,
                 modifier = Modifier.fillMaxWidth(),
             )
 

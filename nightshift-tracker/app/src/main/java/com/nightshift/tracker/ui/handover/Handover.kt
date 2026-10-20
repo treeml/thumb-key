@@ -44,6 +44,27 @@ fun buildHandover(
         appendLine("${timeFmt.format(Date(shift.startedAt))} – ${timeFmt.format(Date(now))}")
         appendLine()
 
+        // Flagged items first, and repeated below in their normal section. A
+        // handover is read aloud top to bottom and the things you deliberately
+        // marked are the things that must survive someone stopping halfway.
+        val flaggedJobs = jobs.filter { it.handover }
+        val flaggedReviews = reviews.filter { it.handover }
+        if (flaggedJobs.isNotEmpty() || flaggedReviews.isNotEmpty()) {
+            appendLine("** SAY THIS (${flaggedJobs.size + flaggedReviews.size}) **")
+            flaggedJobs.forEach { job ->
+                val bed = if (job.bed.isNotBlank()) "Bed ${job.bed} — " else ""
+                val state = if (job.status == 2) " [done]" else ""
+                appendLine("- $bed${job.text.ifBlank { "(no text)" }}$state")
+            }
+            flaggedReviews.forEach { r ->
+                val bed = if (r.bed.isNotBlank()) "Bed ${r.bed}" else "Bed —"
+                val name = r.patientName.ifBlank { "Unnamed" }
+                appendLine("- $bed · $name — ${r.reason.ifBlank { "review" }.trim()}")
+                if (r.plan.isNotBlank()) appendLine("    Plan: ${r.plan.trim()}")
+            }
+            appendLine()
+        }
+
         appendLine("OUTSTANDING (${outstanding.size})")
         if (outstanding.isEmpty()) {
             appendLine("- Nil outstanding.")

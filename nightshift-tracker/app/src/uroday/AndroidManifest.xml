@@ -8,18 +8,4 @@
          permission of ours — and declaring CAMERA would start requiring one. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <application>
-        <!-- Lets the camera app write into ONE file in the app's private photo
-             directory, and nothing else. UroDay only: the Nightshift flavor has
-             no photo feature and so no provider. -->
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.photos"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/photo_paths" />
-        </provider>
-    </application>
 </manifest>

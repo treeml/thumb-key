@@ -22,9 +22,11 @@ import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.nightshift.tracker.data.PhotoStore
 import com.nightshift.tracker.ui.settings.AppSettings
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -113,6 +115,44 @@ fun CaptureBar(
                 runCatching { focusRequester.requestFocus() }
             }
         }
+
+    var pendingScan by remember { mutableStateOf<String?>(null) }
+    val scanner =
+        rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { taken ->
+            val name = pendingScan
+            pendingScan = null
+            if (!taken || name == null) return@rememberLauncherForActivityResult
+            val file = PhotoStore.file(context, name)
+            TextScan.read(
+                context = context,
+                uri = PhotoStore.uriFor(context, name),
+                onDone = { text ->
+                    // The photo has done its job the moment the words are out
+                    // of it. A picture of a wristband is the most identifying
+                    // thing this app could hold, and it is not worth keeping.
+                    runCatching { file.delete() }
+                    val line = scanToCaptureLine(text)
+                    if (line.isBlank()) {
+                        Toast.makeText(context, "No bed, name or MRN found", Toast.LENGTH_SHORT).show()
+                    } else {
+                        raw = line + raw
+                        runCatching { focusRequester.requestFocus() }
+                    }
+                },
+                onError = { message ->
+                    runCatching { file.delete() }
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                },
+            )
+        }
+
+    fun scan() {
+        tick()
+        val name = "scan-" + PhotoStore.newFileName()
+        pendingScan = name
+        runCatching { scanner.launch(PhotoStore.uriFor(context, name)) }
+            .onFailure { Toast.makeText(context, "No camera on this phone", Toast.LENGTH_SHORT).show() }
+    }
 
     fun dictate() {
         tick()
@@ -271,10 +311,26 @@ fun CaptureBar(
                     )
                 }
             }
+            val scanKey: @Composable () -> Unit = {
+                Box(
+                    Modifier
+                        .size(48.dp)
+                        .background(Surface2, RoundedCornerShape(Radius.md))
+                        .clickable { scan() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.DocumentScanner,
+                        contentDescription = "Scan a label",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
             val micKey: @Composable () -> Unit = {
                 Box(
                     Modifier
-                        .size(52.dp)
+                        .size(48.dp)
                         .background(Surface2, RoundedCornerShape(Radius.md))
                         .clickable { dictate() },
                     contentAlignment = Alignment.Center,
@@ -291,9 +347,11 @@ fun CaptureBar(
             if (left) {
                 sendKey()
                 micKey()
+                scanKey()
                 Box(Modifier.weight(1f)) { field() }
             } else {
                 Box(Modifier.weight(1f)) { field() }
+                scanKey()
                 micKey()
                 sendKey()
             }

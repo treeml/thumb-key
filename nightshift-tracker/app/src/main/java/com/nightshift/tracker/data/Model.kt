@@ -74,6 +74,15 @@ data class Job(
      * already captured also survives in the backups this way.
      */
     val inkJson: String? = null,
+    /**
+     * Must be said out loud at handover.
+     *
+     * Separate from priority and from done-ness: a job can be finished and
+     * still be the thing the morning team needs to hear about, and an urgent
+     * job may be entirely yours to close out. This is the only flag that
+     * answers "does the next person need to know".
+     */
+    val handover: Boolean = false,
 )
 
 @Entity(
@@ -104,6 +113,15 @@ data class Review(
     val done: Boolean = false,
     /** Optional alarm for this patient, e.g. recheck at 04:00. */
     val remindAt: Long? = null,
+    /**
+     * Must be said out loud at handover.
+     *
+     * Separate from priority and from done-ness: a job can be finished and
+     * still be the thing the morning team needs to hear about, and an urgent
+     * job may be entirely yours to close out. This is the only flag that
+     * answers "does the next person need to know".
+     */
+    val handover: Boolean = false,
     /**
      * Which presentation this review was started from, so the card can show
      * that template's differential and workup prompts. The label, not the text:

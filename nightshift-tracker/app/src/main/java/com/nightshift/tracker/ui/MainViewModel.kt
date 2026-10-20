@@ -229,6 +229,12 @@ class MainViewModel(
             screen.value = Screen.ReviewDetail(review.id)
         }
 
+    /** Flag for handover, from the board or from the item's own screen. */
+    fun toggleHandover(job: Job) = viewModelScope.launch { repo.updateJob(job.copy(handover = !job.handover)) }
+
+    fun toggleHandover(review: Review) =
+        viewModelScope.launch { repo.updateReview(review.copy(handover = !review.handover)) }
+
     /** Push a live or expired timer out by [minutes] without retyping anything. */
     fun snoozeJob(job: Job, minutes: Int) =
         viewModelScope.launch {

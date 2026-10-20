@@ -2,7 +2,9 @@ package com.nightshift.tracker.ui.jobs
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -364,7 +367,7 @@ private fun BedHeader(
  * Tap opens it full screen. Nothing is editable here, which is the point: this
  * list is for reading and scrolling past, not for typing into.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun BoardRow(
     item: BoardItem,
@@ -407,6 +410,7 @@ private fun BoardRow(
         state = dismiss,
         backgroundContent = { SwipeBackdrop(dismiss.dismissDirection, item.priority) },
     ) {
+      Column {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
@@ -416,12 +420,25 @@ private fun BoardRow(
                     .background(
                         if (due != null) urgency.copy(alpha = 0.10f) else Surface1,
                         RoundedCornerShape(Radius.sm),
-                    ).clickable {
-                        when (item) {
-                            is BoardItem.JobItem -> vm.openJob(item.job)
-                            is BoardItem.ReviewItem -> vm.openReview(item.review)
-                        }
-                    }.padding(horizontal = 10.dp, vertical = 10.dp),
+                    ).combinedClickable(
+                        onClick = {
+                            when (item) {
+                                is BoardItem.JobItem -> vm.openJob(item.job)
+                                is BoardItem.ReviewItem -> vm.openReview(item.review)
+                            }
+                        },
+                        // Long-press flags it for handover. Both swipes are
+                        // already spoken for and the row has no space left for
+                        // a third button without becoming the cramped thing it
+                        // replaced — and a press costs no layout at all.
+                        onLongClick = {
+                            tick()
+                            when (item) {
+                                is BoardItem.JobItem -> vm.toggleHandover(item.job)
+                                is BoardItem.ReviewItem -> vm.toggleHandover(item.review)
+                            }
+                        },
+                    ).padding(horizontal = 10.dp, vertical = 10.dp),
         ) {
             Box(
                 Modifier
@@ -450,6 +467,14 @@ private fun BoardRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            if (item.handover) {
+                Icon(
+                    Icons.Filled.Flag,
+                    contentDescription = "Flagged for handover",
+                    tint = SoonYellow,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
             if (item.inProgress) {
                 Text(
                     "···",
@@ -472,6 +497,21 @@ private fun BoardRow(
                 modifier = Modifier.width(18.dp),
             )
         }
+
+        // Pushing a blown timer out used to take five taps through the detail
+        // screen and a dialog. It is the single most common thing you do to an
+        // overdue job, and only overdue rows carry the cost of showing it.
+        if (overdue && item is BoardItem.JobItem) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                modifier = Modifier.padding(start = 16.dp, end = 10.dp, bottom = 8.dp),
+            ) {
+                NsAction("+10", { vm.snoozeJob(item.job, 10) }, tone = UrgentRed)
+                NsAction("+30", { vm.snoozeJob(item.job, 30) }, tone = UrgentRed)
+                NsAction("Clear", { vm.setJobTimer(item.job, null) })
+            }
+        }
+      }
     }
 }
 

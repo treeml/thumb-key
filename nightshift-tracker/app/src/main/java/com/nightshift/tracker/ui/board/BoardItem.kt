@@ -25,6 +25,9 @@ sealed interface BoardItem {
     val title: String
     val inProgress: Boolean
 
+    /** Flagged to be said out loud at handover. */
+    val handover: Boolean
+
     data class JobItem(val job: Job) : BoardItem {
         override val key get() = "job-${job.id}"
         override val bedText get() = job.bed
@@ -33,6 +36,7 @@ sealed interface BoardItem {
         override val createdAt get() = job.createdAt
         override val title get() = job.text.ifBlank { "New job" }
         override val inProgress get() = job.status == 1
+        override val handover get() = job.handover
     }
 
     data class ReviewItem(val review: Review) : BoardItem {
@@ -47,6 +51,7 @@ sealed interface BoardItem {
 
         /** A review with an impression started is one you are part-way through. */
         override val inProgress get() = review.impression.isNotBlank() || review.plan.isNotBlank()
+        override val handover get() = review.handover
     }
 }
 

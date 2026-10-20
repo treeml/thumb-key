@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -62,6 +63,7 @@ import com.nightshift.tracker.ui.jobs.collectAsStateValue
 import com.nightshift.tracker.ui.photos.PhotoStrip
 import com.nightshift.tracker.ui.theme.Ink
 import com.nightshift.tracker.ui.theme.RoutineGreen
+import com.nightshift.tracker.ui.theme.SoonYellow
 import com.nightshift.tracker.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -349,6 +351,15 @@ fun ReviewDetailScreen(
                     }
                 }
             }
+            NsAction(
+                label = if (review.handover) "Flagged for handover" else "Flag for handover",
+                onClick = { vm.toggleHandover(review) },
+                icon = Icons.Filled.Flag,
+                tone = if (review.handover) SoonYellow else null,
+                filled = review.handover,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
             PhotoStrip(ownerId = review.id, vm = vm, generation = generation)
 
             // No Done button, on purpose: it sat where a thumb lands to close

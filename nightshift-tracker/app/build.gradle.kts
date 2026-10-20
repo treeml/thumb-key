@@ -13,8 +13,8 @@ android {
         applicationId = "com.nightshift.tracker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 25
-        versionName = "4.5.1"
+        versionCode = 26
+        versionName = "4.6.0"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -103,4 +103,10 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("com.google.code.gson:gson:2.11.0")
+
+    // On-device text recognition. The BUNDLED artifact ships the Latin model
+    // inside the APK rather than fetching it from Play Services, which is the
+    // whole point: Nightshift has no INTERNET permission at all, so a model
+    // that needed downloading could never work there.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 }
