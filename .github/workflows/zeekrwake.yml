@@ -6,6 +6,9 @@ on:
     paths: [ 'zeekrwake/**', '.github/workflows/zeekrwake.yml' ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,3 +31,13 @@ jobs:
         with:
           name: zeekrwake-apk
           path: zeekrwake.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete zeekrwake --yes --cleanup-tag || true
+          gh release create zeekrwake zeekrwake.apk \
+            --target "$GITHUB_SHA" \
+            --title "ZeekrWake" \
+            --notes "Debug-signed sideload build. Wakes the Zeekr app and taps its connect control when the car's BLE advertisement is detected. Setup: zeekrwake/README.md"
