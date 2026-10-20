@@ -43,7 +43,8 @@ class MainActivity : Activity() {
         }
 
         macField = field("Car BLE MAC (AA:BB:...)", Prefs.mac, root)
-        uuidField = field("or service UUID (if MAC rotates)", Prefs.serviceUuid, root)
+        uuidField = field("and/or service UUIDs, comma separated (fff5,fdfd)",
+            Prefs.serviceUuid, root)
         pkgField = field("Zeekr package name", Prefs.target, root)
         labelField = field("Button text to tap (comma separated)", Prefs.tapLabels, root)
         gateField = field("Only wake above this RSSI (-75 is a few metres)",

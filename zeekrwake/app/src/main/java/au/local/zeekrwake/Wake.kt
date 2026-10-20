@@ -28,18 +28,38 @@ object Wake {
         return PendingIntent.getBroadcast(ctx, REQ, i, flags)
     }
 
+    /** "fff5" and "0000fff5" are accepted as shorthand for the full 128-bit form. */
+    private fun expandUuid(s: String): UUID? {
+        val t = s.trim().lowercase()
+        val full = when {
+            t.length == 4 -> "0000$t-0000-1000-8000-00805f9b34fb"
+            t.length == 8 -> "$t-0000-1000-8000-00805f9b34fb"
+            else -> t
+        }
+        return runCatching { UUID.fromString(full) }
+            .onFailure { Log.w(TAG, "bad uuid: $s") }
+            .getOrNull()
+    }
+
+    /**
+     * Separate filters, not one combined filter. The scanner ORs the list, so this matches the
+     * car by MAC *or* by any of its service UUIDs. That matters because the car advertises a
+     * different service depending on whether it is asleep or awake, and a single filter with
+     * both a MAC and a UUID would require both to match at once.
+     */
     private fun filters(): List<ScanFilter> {
-        val b = ScanFilter.Builder()
-        val mac = Prefs.mac
-        val uuid = Prefs.serviceUuid
-        if (uuid.isNotEmpty()) {
-            runCatching { b.setServiceUuid(ParcelUuid(UUID.fromString(uuid))) }
-                .onFailure { Log.w(TAG, "bad uuid: $uuid") }
+        val out = mutableListOf<ScanFilter>()
+
+        Prefs.mac.takeIf { it.isNotEmpty() }?.let { mac ->
+            runCatching { out += ScanFilter.Builder().setDeviceAddress(mac).build() }
+                .onFailure { Log.w(TAG, "bad mac: $mac") }
         }
-        if (mac.isNotEmpty()) {
-            runCatching { b.setDeviceAddress(mac) }.onFailure { Log.w(TAG, "bad mac: $mac") }
+        for (part in Prefs.serviceUuid.split(",")) {
+            if (part.isBlank()) continue
+            val uuid = expandUuid(part) ?: continue
+            out += ScanFilter.Builder().setServiceUuid(ParcelUuid(uuid)).build()
         }
-        return listOf(b.build())
+        return out
     }
 
     private fun settings(): ScanSettings {
@@ -62,9 +82,11 @@ object Wake {
     fun register(ctx: Context): String {
         val scanner = (ctx.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager)
             .adapter?.bluetoothLeScanner ?: return "Bluetooth is off"
-        if (Prefs.mac.isEmpty() && Prefs.serviceUuid.isEmpty()) return "Set a MAC or service UUID first"
-        val rc = scanner.startScan(filters(), settings(), scanPendingIntent(ctx))
-        return if (rc == 0) "Scan registered" else "startScan failed (code $rc)"
+        val f = filters()
+        if (f.isEmpty()) return "Set a MAC or service UUID first"
+        val rc = scanner.startScan(f, settings(), scanPendingIntent(ctx))
+        return if (rc == 0) "Scan registered (${f.size} filter(s))"
+               else "startScan failed (code $rc)"
     }
 
     @SuppressLint("MissingPermission")
